@@ -1,6 +1,6 @@
 import pytest
 
-from app.bilibili import BiliError
+from app.bilibili import BiliError, BiliThrottled
 from app.models import Part, SearchHit, SeasonEp, VideoDetail
 from app.pipeline import latest, search_series
 
@@ -27,12 +27,13 @@ class FakeClient:
     def __init__(self, hits=(), details=None, by_keyword=None, fail_on=()):
         self.hits, self.details = list(hits), details or {}
         self.by_keyword, self.fail_on = by_keyword or {}, set(fail_on)
-        self.search_calls, self.view_calls = [], []
+        self.search_calls, self.view_calls, self.patience = [], [], []
 
-    async def search(self, keyword, order="click", duration=0, page=1):
+    async def search(self, keyword, order="click", duration=0, page=1, patient=True):
         self.search_calls.append((keyword, order, duration))
+        self.patience.append(patient)
         if len(self.search_calls) in self.fail_on:
-            raise BiliError("B 站暫時限制查詢，請稍後再試")
+            raise BiliThrottled("B 站暫時限制查詢，請過幾分鐘再試")
         return list(self.by_keyword.get(keyword, self.hits))
 
     async def view(self, bvid):
@@ -60,8 +61,9 @@ async def test_searches_primary_name_five_ways():
     fake = FakeClient()
     await search_series(fake, ["绝命毒师"], noop)
     assert fake.search_calls == [
-        ("绝命毒师", "click", 4), ("绝命毒师 全集", "click", 4), ("绝命毒师 全集", "click", 3),
+        ("绝命毒师 全集", "click", 4), ("绝命毒师", "click", 4), ("绝命毒师 全集", "click", 3),
         ("绝命毒师 全集", "click", 2), ("绝命毒师 未删减", "click", 0)]
+    assert fake.patience == [True, False, False, False, False]
 
 
 async def test_groups_and_sorts_by_play():
@@ -96,7 +98,7 @@ async def test_second_name_adds_one_search_and_matches():
     fake = FakeClient(by_keyword={"Breaking Bad 全集": [en]},
                       details={"EN1": detail("EN1", "Breaking Bad 全集 1080P", [300] * 10, play=7)})
     out = await search_series(fake, ["绝命毒师", "Breaking Bad"], noop)
-    assert fake.search_calls[5] == ("Breaking Bad 全集", "click", 4)
+    assert fake.search_calls[2] == ("Breaking Bad 全集", "click", 4)
     assert len(fake.search_calls) == 6
     assert [i.bvid for i in out.complete] == ["EN1"]
 
@@ -106,10 +108,18 @@ async def test_first_search_failure_propagates():
         await search_series(FakeClient(fail_on={1}), ["x"], noop)
 
 
-async def test_later_search_failure_is_tolerated():
+async def test_throttle_on_a_later_search_stops_searching_and_marks_partial():
     hits, details = modern_family()
-    out = await search_series(FakeClient(hits, details, fail_on={3}), ["摩登家庭"], noop)
+    fake = FakeClient(hits, details, fail_on={3})
+    out = await search_series(fake, ["摩登家庭"], noop)
     assert [i.bvid for i in out.complete] == ["B", "A"]
+    assert len(fake.search_calls) == 3      # no further searches once Bilibili pushes back
+    assert out.partial is True
+
+
+async def test_unthrottled_search_is_not_partial():
+    hits, details = modern_family()
+    assert (await search_series(FakeClient(hits, details), ["摩登家庭"], noop)).partial is False
 
 
 async def test_only_top_20_candidates_are_viewed():

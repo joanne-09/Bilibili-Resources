@@ -86,7 +86,7 @@ async def test_throttled_then_ok_retries():
 
 
 async def test_throttled_forever_raises_not_empty():
-    with pytest.raises(BiliError, match="暫時限制"):
+    with pytest.raises(BiliError, match="暫時限制查詢"):
         await make(Site(search=[THROTTLED])).search("x")
 
 
@@ -118,3 +118,23 @@ async def test_view_maps_parts_and_season():
 
 async def test_view_of_deleted_video_returns_none():
     assert await make(Site(view={"code": -404})).view("BVgone") is None
+
+
+async def test_throttle_is_a_distinct_error_type():
+    from app.bilibili import BiliThrottled
+    with pytest.raises(BiliThrottled):
+        await make(Site(search=[THROTTLED])).search("x")
+
+
+async def test_impatient_search_does_not_retry_when_throttled():
+    from app.bilibili import BiliThrottled
+    site = Site(search=[THROTTLED, ONE_RESULT])
+    with pytest.raises(BiliThrottled):
+        await make(site).search("x", patient=False)
+    assert len(site.search_params) == 1
+
+
+async def test_html_entities_in_titles_are_decoded():
+    body = {"code": 0, "data": {"numResults": 1, "result": [
+        {"bvid": "BV2", "title": "柳镇&amp;李 <em class=\"keyword\">全集</em>", "duration": "1:0"}]}}
+    assert (await make(Site(search=[body])).search("x"))[0].title == "柳镇&李 全集"

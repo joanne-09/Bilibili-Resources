@@ -22,28 +22,29 @@ class Outcome:
     excluded: list[ResultItem] = field(default_factory=list)
     names: list[str] = field(default_factory=list)
     fetched_at: float = 0.0
+    partial: bool = False  # Bilibili pushed back mid-way; some searches were skipped
 
 
-async def _gather(client, plan: list[tuple[str, int]], order: str, progress: Progress) -> list[SearchHit]:
-    """Run each (keyword, duration) search; dedupe hits by bvid.
+async def _gather(client, plan: list[tuple[str, int]], order: str,
+                  progress: Progress) -> tuple[list[SearchHit], bool]:
+    """Run each (keyword, duration) search, most valuable first; dedupe by bvid.
 
-    A failure on the first search propagates. Later failures are tolerated as
-    long as something already succeeded: partial results beat none.
+    Returns (hits, partial). The first search waits out a throttle and its
+    failure propagates. After that, the moment Bilibili pushes back we stop
+    asking and go with what we have: more requests would only prolong the block.
     """
     hits: dict[str, SearchHit] = {}
-    succeeded = False
     for i, (keyword, duration) in enumerate(plan, 1):
         await progress(f"正在查 B 站（{i}/{len(plan)}）…")
         try:
-            found = await client.search(keyword, order=order, duration=duration)
+            found = await client.search(keyword, order=order, duration=duration, patient=(i == 1))
         except BiliError:
-            if not succeeded:
+            if i == 1:
                 raise
-            continue
-        succeeded = True
+            return list(hits.values()), True
         for h in found:
             hits.setdefault(h.bvid, h)
-    return list(hits.values())
+    return list(hits.values()), False
 
 
 async def _judge(client, candidates: list[SearchHit], names: list[str] | None,
@@ -72,13 +73,15 @@ async def _judge(client, candidates: list[SearchHit], names: list[str] | None,
 async def search_series(client, names: list[str], progress: Progress) -> Outcome:
     """names: search names, primary first (see AliasResolver.resolve)."""
     primary = names[0]
-    plan = [(primary, 4), (f"{primary} 全集", 4), (f"{primary} 全集", 3),
-            (f"{primary} 全集", 2), (f"{primary} 未删减", 0)]
+    # Ordered by how much each tends to find, since a throttle cuts the list short.
+    plan = [(f"{primary} 全集", 4), (primary, 4)]
     plan += [(f"{other} 全集", 4) for other in names[1:3]]
+    plan += [(f"{primary} 全集", 3), (f"{primary} 全集", 2), (f"{primary} 未删减", 0)]
 
     out = Outcome(names=list(names))
     candidates = []
-    for h in await _gather(client, plan, "click", progress):
+    found, out.partial = await _gather(client, plan, "click", progress)
+    for h in found:
         reason = prefilter(h, names)
         if reason:
             out.excluded.append(excluded_from_hit(h, reason))
@@ -98,7 +101,8 @@ async def latest(client, progress: Progress, now: float | None = None) -> Outcom
     now = time.time() if now is None else now
     out = Outcome()
     candidates = []
-    for h in await _gather(client, [(k, 4) for k in LATEST_KEYWORDS], "pubdate", progress):
+    found, out.partial = await _gather(client, [(k, 4) for k in LATEST_KEYWORDS], "pubdate", progress)
+    for h in found:
         if h.pubdate < now - LATEST_WINDOW_S:
             continue
         reason = prefilter(h, None)

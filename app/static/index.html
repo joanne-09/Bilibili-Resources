@@ -59,6 +59,7 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
   .banner { margin: 16px 0; padding: 12px 14px; border-radius: 10px; background: var(--err-bg); color: var(--err-text); }
+  .note { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--warn-text); font-size: 14px; }
   .empty { margin: 28px 2px; color: var(--muted); }
   .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .row {
@@ -235,6 +236,9 @@
       status.append(refresh);
     }
     out.append(status);
+    if (r.partial) {
+      out.append(el("div", "note", "B 站限制了部分查詢，這次的結果可能不齊全。過幾分鐘再搜一次會更完整。"));
+    }
 
     if (r.complete.length) {
       out.append(list(r.complete));

@@ -23,7 +23,8 @@ _EP_RANGE = re.compile(rf"(?<!\d)(\d{{1,3}})\s*{_DASH}\s*(\d{{1,3}})(?!\d)(?!\s*
 _WHOLE_CLAIM = re.compile(rf"全集|全\s*{_NUM}\s*集|完结")
 _ANY_CLAIM = re.compile(rf"全集|全\s*{_NUM}\s*[集季]|完结|未删减|无删")
 _CLAIMED_EPS = re.compile(rf"全\s*({_NUM})\s*集")
-_ALL_SEASONS = re.compile(rf"全\s*({_NUM})\s*季")
+_ALL_SEASONS = re.compile(
+    rf"全\s*({_NUM})\s*季|(?<![第0-9一二两三四五六七八九十])({_NUM})\s*季全(?![集0-9一二两三四五六七八九十])")
 _SEASON_RANGE = re.compile(
     rf"(?<![a-z])s(\d{{1,2}})\s*{_DASH}\s*s?(\d{{1,2}})(?!\d)|(?<!\d)(\d{{1,2}})\s*{_DASH}\s*(\d{{1,2}})\s*季")
 _ONE_SEASON = re.compile(rf"第\s*({_NUM})\s*季|(?<![a-z])s(\d{{1,2}})(?!\d)")
@@ -56,6 +57,8 @@ def prefilter(hit: SearchHit, names: list[str] | None) -> str | None:
     reason = _keyword_reason(hit.title)
     if reason:
         return reason
+    if "国产" in hit.typename:
+        return "國產劇分區"  # a same-named Chinese drama, not the US series
     if names:
         if not _mentions(names, hit.title):
             return "與搜尋無關"
@@ -78,11 +81,16 @@ def _url(bvid: str) -> str:
     return f"https://www.bilibili.com/video/{bvid}"
 
 
-def _coverage(text: str) -> str:
+def _claimed_seasons(text: str) -> int | None:
     if m := _ALL_SEASONS.search(text):
-        n = cn_to_int(m.group(1))
-        if n:
-            return f"全 {n} 季"
+        return cn_to_int(m.group(1) or m.group(2))
+    return None
+
+
+def _coverage(text: str) -> str:
+    n = _claimed_seasons(text)
+    if n:
+        return f"全 {n} 季"
     if m := _SEASON_RANGE.search(text):
         a, b = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
         if int(a) < int(b):
@@ -174,6 +182,13 @@ def classify(detail: VideoDetail, names: list[str] | None) -> ResultItem:
         if claimed and total < claimed * MIN_EP_S:
             return item("uncertain",
                         f"時長不足：聲稱 {claimed} 集，實際僅 {total / 3600:.1f} 小時", form, form_label)
+
+    if use_season and total / n >= MERGED_AVG_S:
+        # Each video holds a season or more; fewer videos than seasons claimed
+        # usually means the uploader has not finished the collection.
+        seasons = _claimed_seasons(text)
+        if seasons and n < seasons:
+            return item("uncertain", f"合集只有 {n} 支影片，聲稱全 {seasons} 季", form, form_label)
 
     if not _ANY_CLAIM.search(text):
         if (form == "episodic" and n < 6) or (form == "merged" and total < 180 * 60):

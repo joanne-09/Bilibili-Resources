@@ -22,12 +22,12 @@ class FakeResolver:
 
 
 class FailingClient(FakeClient):
-    async def search(self, keyword, order="click", duration=0, page=1):
+    async def search(self, keyword, order="click", duration=0, page=1, patient=True):
         raise BiliError("B 站暫時限制查詢，請稍後再試")
 
 
 class BrokenClient(FakeClient):
-    async def search(self, keyword, order="click", duration=0, page=1):
+    async def search(self, keyword, order="click", duration=0, page=1, patient=True):
         raise RuntimeError("boom")
 
 
@@ -122,3 +122,13 @@ def test_latest_refresh_bypasses_cache(fake):
 def test_index_served(fake):
     with serve(fake) as tc:
         assert "B站完整美劇" in tc.get("/").text
+
+
+def test_partial_result_is_flagged_and_not_cached():
+    hits, details = modern_family()
+    client = FakeClient(hits, details, fail_on={2})
+    with serve(client) as tc:
+        first = lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]
+        second = lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]
+    assert first["partial"] is True and first["cached"] is False
+    assert second["cached"] is False and second["partial"] is False

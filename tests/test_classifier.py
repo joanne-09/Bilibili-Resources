@@ -108,3 +108,26 @@ def test_quality_labels():
 def test_subtitle_labels():
     assert classify(detail("某剧 全集 纯英文字幕", [300, 300]), None).subtitle == "純英文"
     assert classify(detail("某剧 全集", [300, 300]), None).subtitle == "未知"
+
+
+def test_domestic_drama_zone_is_excluded():
+    h = hit("【爱情/家庭】摩登家庭 全33集【2002】", 1531, typename="国产剧")
+    assert prefilter(h, ["摩登家庭"]) == "國產劇分區"
+
+
+def test_collection_with_fewer_videos_than_claimed_seasons_is_uncertain():  # BV1NnBYBaEGg
+    eps = [SeasonEp(f"BV{i}", f"第{i}季", m * 60, 1000) for i, m in ((3, 1027), (4, 1226), (5, 1154))]
+    r = classify(detail("《摩登-家庭 第五季》全24集 超清双字", [286] * 4, season_id=7,
+                        season_title="摩登家庭 全11季合辑", season_eps=eps), ["摩登家庭"])
+    assert (r.status, r.reason) == ("uncertain", "合集只有 3 支影片，聲稱全 11 季")
+
+
+def test_collection_of_single_episodes_claiming_all_seasons_stays_complete():
+    eps = [SeasonEp(f"BV{i}", f"E{i}", 22 * 60, 10) for i in range(48)]
+    r = classify(detail("某剧 E1", [22], season_id=8, season_title="某剧 全2季", season_eps=eps), ["某剧"])
+    assert r.status == "complete"
+
+
+def test_coverage_with_trailing_quan():
+    r = classify(detail("【摩登家庭 十一季全】超清 完整版 未删减 reaction", [360] * 17), ["摩登家庭"])
+    assert r.coverage == "全 11 季"

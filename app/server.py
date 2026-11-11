@@ -95,7 +95,8 @@ def create_app(client=None, resolver=None) -> FastAPI:
             if cached is not None:
                 return _result(cached, cached=True)
             outcome = await search_series(state["client"], names, progress)
-            search_cache.set(key, outcome)
+            if not outcome.partial:  # a cut-short result should be retried, not remembered
+                search_cache.set(key, outcome)
             return _result(outcome, cached=False)
 
         if not query:  # answer without queueing behind a running search
@@ -110,7 +111,8 @@ def create_app(client=None, resolver=None) -> FastAPI:
             if cached is not None:
                 return _result(cached, cached=True)
             outcome = await latest(state["client"], progress)
-            latest_cache.set("latest", outcome)
+            if not outcome.partial:
+                latest_cache.set("latest", outcome)
             return _result(outcome, cached=False)
 
         return stream(job)

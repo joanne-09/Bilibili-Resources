@@ -4,6 +4,7 @@ Uses the same unofficial endpoints the bilibili.com web page calls. No login.
 """
 import asyncio
 import hashlib
+import html
 import time
 import urllib.parse
 
@@ -24,6 +25,11 @@ _MIXIN_TABLE = [
 
 class BiliError(Exception):
     """A failure talking to Bilibili. The message is shown to the user."""
+
+
+class BiliThrottled(BiliError):
+    """Bilibili's risk control refused the search (it answers with a `v_voucher`
+    instead of results). We do not try to get around it: back off and say so."""
 
 
 def mixin_key(img_key: str, sub_key: str) -> str:
@@ -54,8 +60,8 @@ def _stem(url: str) -> str:
 
 class BiliClient:
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None,
-                 search_interval: float = 2.0, view_interval: float = 0.5,
-                 retry_waits: tuple[float, ...] = (3.0, 6.0, 12.0)):
+                 search_interval: float = 3.0, view_interval: float = 0.5,
+                 retry_waits: tuple[float, ...] = (4.0, 10.0)):
         self._http = httpx.AsyncClient(
             transport=transport, timeout=15, follow_redirects=True,
             headers={"User-Agent": _UA, "Referer": "https://www.bilibili.com/"})
@@ -115,12 +121,16 @@ class BiliClient:
                 self._last[kind] = time.monotonic()
 
     async def search(self, keyword: str, order: str = "click", duration: int = 0,
-                     page: int = 1) -> list[SearchHit]:
-        """duration: 0 any, 1 <10 min, 2 10-30, 3 30-60, 4 >60."""
+                     page: int = 1, patient: bool = True) -> list[SearchHit]:
+        """duration: 0 any, 1 <10 min, 2 10-30, 3 30-60, 4 >60.
+
+        patient=False gives up on the first throttled answer instead of waiting
+        and retrying; use it for searches whose results are a bonus.
+        """
         key = await self._ensure_key()
         base = {"search_type": "video", "keyword": keyword, "order": order,
                 "duration": duration, "page": page}
-        for wait in (None, *self._retry_waits):
+        for wait in (None, *(self._retry_waits if patient else ())):
             if wait is not None:
                 await asyncio.sleep(wait)
             body = await self._paced("search", f"{_API}/x/web-interface/wbi/search/type",
@@ -131,12 +141,12 @@ class BiliClient:
             if "numResults" not in data:
                 continue  # rate-limited: "success" with an empty shell
             return [self._hit(v) for v in data.get("result") or [] if v.get("bvid")]
-        raise BiliError("B 站暫時限制查詢，請稍後再試")
+        raise BiliThrottled("B 站暫時限制查詢，請過幾分鐘再試")
 
     @staticmethod
     def _hit(v: dict) -> SearchHit:
         return SearchHit(
-            bvid=v["bvid"], title=strip_tags(v.get("title") or ""),
+            bvid=v["bvid"], title=html.unescape(strip_tags(v.get("title") or "")),
             duration_s=parse_mmss(v.get("duration") or "0"), play=int(v.get("play") or 0),
             pubdate=int(v.get("pubdate") or 0), typename=v.get("typename") or "",
             author=v.get("author") or "", cover=_https(v.get("pic") or ""),

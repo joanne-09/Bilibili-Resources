@@ -194,7 +194,8 @@ def create_app(client=None, resolver=None, tmdb=None, backfill_interval: float |
         return [{"id": key, "label": spec.label} for key, spec in PLATFORMS.items()]
 
     @app.get("/api/catalog")
-    async def api_catalog(platform: str = "", section: str = "", kind: str = "", page: int = 1):
+    async def api_catalog(platform: str = "", section: str = "", kind: str = "", page: int = 1,
+                          genre: int | None = None):
         if (platform not in PLATFORMS or kind not in KINDS
                 or section not in ("available", "upcoming") or not 1 <= page <= 500):
             return JSONResponse({"error": "參數錯誤"}, status_code=400, headers=_NO_STORE)
@@ -203,13 +204,27 @@ def create_app(client=None, resolver=None, tmdb=None, backfill_interval: float |
             return JSONResponse({"configured": False, "items": [], "has_more": False}, headers=_NO_STORE)
         try:
             if section == "available":
-                items, has_more = await tmdb.available(platform, kind, page)
+                items, has_more = await tmdb.available(platform, kind, page, genre=genre)
             else:
-                items, has_more = await tmdb.upcoming(platform, kind), False
+                items, has_more = await tmdb.upcoming(platform, kind, genre=genre), False
         except TmdbError as exc:
             return JSONResponse({"error": str(exc)}, status_code=502, headers=_NO_STORE)
         return JSONResponse({"configured": True, "items": [dataclasses.asdict(t) for t in items],
                              "has_more": has_more}, headers=_NO_STORE)
+
+    @app.get("/api/genres")
+    async def api_genres(kind: str = ""):
+        """Genre list for the catalog filter. Empty when unavailable: the filter is optional."""
+        if kind not in KINDS:
+            return JSONResponse({"error": "參數錯誤"}, status_code=400, headers=_NO_STORE)
+        tmdb = state["tmdb"]
+        if not tmdb.configured:
+            return JSONResponse([], headers=_NO_STORE)
+        try:
+            genres = await tmdb.genres(kind)
+        except TmdbError:
+            return JSONResponse([], headers=_NO_STORE)
+        return JSONResponse([dataclasses.asdict(g) for g in genres], headers=_NO_STORE)
 
     @app.get("/")
     async def index():

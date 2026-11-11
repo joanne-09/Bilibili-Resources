@@ -4,6 +4,7 @@ import re
 from opencc import OpenCC
 
 _t2s = OpenCC("t2s")
+_s2t = OpenCC("s2t")
 _TAG = re.compile(r"<[^>]+>")
 _KEEP = re.compile(r"[^0-9a-z㐀-鿿]+")
 _CN_DIGITS = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
@@ -12,6 +13,10 @@ _CN_DIGITS = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五":
 
 def to_simplified(text: str) -> str:
     return _t2s.convert(text)
+
+
+def to_traditional(text: str) -> str:
+    return _s2t.convert(text)
 
 
 def strip_tags(text: str) -> str:

@@ -198,3 +198,79 @@ async def test_find_movie_runtime_tries_the_next_name_and_gives_none_when_unknow
 async def test_find_movie_runtime_is_none_when_not_configured_or_failing():
     assert await client(Api(), key=None).find_movie_runtime(["沙丘"]) is None
     assert await client(Api(status=500)).find_movie_runtime(["沙丘"]) is None
+
+
+# ---- Traditional-Chinese display titles, genres ----------------------------
+
+class LangApi(Api):
+    """Answers /discover differently per requested language."""
+
+    def __init__(self, by_lang, extra=None):
+        super().__init__(extra or {})
+        self.by_lang = by_lang
+
+    def __call__(self, request):
+        if "/discover/" in request.url.path:
+            self.requests.append(request)
+            return httpx.Response(200, json={"page": 1, "total_pages": 1,
+                                             "results": self.by_lang[request.url.params["language"]]})
+        return super().__call__(request)
+
+
+async def test_display_title_is_taiwan_title_and_search_title_stays_mainland():
+    api = LangApi({
+        "zh-TW": [{"id": 1668, "name": "六人行", "original_name": "Friends", "first_air_date": "1994-09-22"}],
+        "zh-CN": [{"id": 1668, "name": "老友记", "original_name": "Friends", "first_air_date": "1994-09-22"}]})
+    items, _ = await client(api).available("hbo", "tv")
+    assert (items[0].display_title, items[0].title, items[0].original_title) == ("六人行", "老友记", "Friends")
+
+
+async def test_display_title_falls_back_to_converted_mainland_title():
+    # TMDB has no Taiwan translation: it echoes the original title for zh-TW.
+    api = LangApi({
+        "zh-TW": [{"id": 5, "name": "The Gilded Age", "original_name": "The Gilded Age", "first_air_date": "2022-01-24"}],
+        "zh-CN": [{"id": 5, "name": "镀金时代", "original_name": "The Gilded Age", "first_air_date": "2022-01-24"}]})
+    items, _ = await client(api).available("hbo", "tv")
+    assert (items[0].display_title, items[0].title) == ("鍍金時代", "镀金时代")
+
+
+async def test_title_missing_from_the_mainland_page_uses_converted_taiwan_title_for_search():
+    api = LangApi({
+        "zh-TW": [{"id": 9, "name": "絕命毒師", "original_name": "Breaking Bad", "first_air_date": "2008-01-20"}],
+        "zh-CN": []})
+    items, _ = await client(api).available("netflix", "tv")
+    assert (items[0].display_title, items[0].title) == ("絕命毒師", "绝命毒师")
+
+
+async def test_untranslated_title_shows_the_original():
+    api = LangApi({"zh-TW": [{"id": 3, "name": "Oobah", "original_name": "Oobah", "first_air_date": "2026-11-22"}],
+                   "zh-CN": [{"id": 3, "name": "Oobah", "original_name": "Oobah", "first_air_date": "2026-11-22"}]})
+    items, _ = await client(api).available("hbo", "tv")
+    assert (items[0].display_title, items[0].title) == ("Oobah", "Oobah")
+
+
+async def test_genres_are_listed_in_traditional_chinese():
+    api = Api({"/genre/tv/list": {"genres": [{"id": 18, "name": "劇情"}, {"id": 35, "name": "喜劇"}]}})
+    genres = await client(api).genres("tv")
+    assert [(g.id, g.name) for g in genres] == [(18, "劇情"), (35, "喜劇")]
+    assert api.last("/genre/tv/list").url.params["language"] == "zh-TW"
+
+
+async def test_genre_filter_is_sent_for_available_and_upcoming():
+    api = Api({"/discover/tv": {"page": 1, "total_pages": 1, "results": []},
+               "/discover/movie": {"page": 1, "total_pages": 1, "results": []}})
+    c = client(api)
+    await c.available("netflix", "tv", genre=18)
+    assert api.last("/discover/tv").url.params["with_genres"] == "18"
+    await c.upcoming("netflix", "tv", genre=35)
+    assert api.last("/discover/tv").url.params["with_genres"] == "35"
+    await c.upcoming("netflix", "movie", genre=28)
+    assert api.last("/discover/movie").url.params["with_genres"] == "28"
+    await c.available("netflix", "movie")
+    assert "with_genres" not in api.last("/discover/movie").url.params
+
+
+async def test_genre_names_are_traditional_even_when_tmdb_sends_simplified_or_english():
+    api = Api({"/genre/tv/list": {"genres": [
+        {"id": 10765, "name": "Sci-Fi & Fantasy"}, {"id": 35, "name": "喜剧"}, {"id": 99999, "name": "新类型"}]}})
+    assert [g.name for g in await client(api).genres("tv")] == ["科幻與奇幻", "喜劇", "新類型"]

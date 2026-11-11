@@ -4,22 +4,36 @@
 "Upcoming" can only cover each platform's own originals: TMDB knows a show's
 network and next air date, but not when a licensed title will join a catalog.
 """
+import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 import httpx
 
 from app.cache import TTLCache
+from app.textnorm import to_simplified, to_traditional
 
 _BASE = "https://api.themoviedb.org/3"
 _POSTER = "https://image.tmdb.org/t/p/w342"
 _REGION = "US"
 _LANGUAGE = "zh-CN"   # mainland titles: that is what Bilibili uploads are named
+_DISPLAY_LANGUAGE = "zh-TW"  # what the user reads
+_CJK = re.compile("[\u3400-\u9fff]")
 _CACHE_TTL_S = 6 * 3600
 UPCOMING_DAYS = 90
 _UPCOMING_TV_LOOKUPS = 20
 KINDS = ("tv", "movie")
+
+# TMDB's zh-TW genre names come back Simplified or untranslated, so name the
+# (stable) genre ids ourselves; unknown ids fall back to script conversion.
+GENRE_NAMES = {
+    28: "動作", 12: "冒險", 16: "動畫", 35: "喜劇", 80: "犯罪", 99: "紀錄片", 18: "劇情",
+    10751: "家庭", 14: "奇幻", 36: "歷史", 27: "恐怖", 10402: "音樂", 9648: "懸疑",
+    10749: "愛情", 878: "科幻", 10770: "電視電影", 53: "驚悚", 10752: "戰爭", 37: "西部",
+    10759: "動作冒險", 10762: "兒童", 10763: "新聞", 10764: "實境秀", 10765: "科幻與奇幻",
+    10766: "肥皂劇", 10767: "脫口秀", 10768: "戰爭與政治",
+}
 
 
 class TmdbError(Exception):
@@ -55,6 +69,13 @@ class Title:
     date: str            # YYYY-MM-DD: release / next air date ("" when unknown)
     poster: str
     season: int | None = None
+    display_title: str = ""  # Traditional-Chinese title for the screen
+
+
+@dataclass
+class Genre:
+    id: int
+    name: str
 
 
 def _title(raw: dict, kind: str, when: str | None = None, season: int | None = None) -> Title:
@@ -140,42 +161,76 @@ class TmdbClient:
         start = self._today()
         return start.isoformat(), (start + timedelta(days=UPCOMING_DAYS)).isoformat()
 
-    async def available(self, platform: str, kind: str, page: int = 1) -> tuple[list[Title], bool]:
+    async def _discover(self, kind: str, params: dict) -> tuple[list[Title], int]:
+        """One discover page, fetched twice: Taiwan titles to show, mainland
+        titles to search Bilibili with. -> (titles, total_pages)"""
+        path = f"/discover/{kind}"
+        shown = await self._get(path, {**params, "language": _DISPLAY_LANGUAGE})
+        mainland = await self._get(path, {**params, "language": _LANGUAGE})
+        by_id = {r.get("id"): r for r in mainland.get("results") or []}
+        name_key = "name" if kind == "tv" else "title"
+        titles = []
+        for raw in shown.get("results") or []:
+            if not raw.get("id"):
+                continue
+            tw_name = raw.get(name_key) or ""
+            cn_raw = by_id.get(raw["id"])
+            title = _title(cn_raw or raw, kind)
+            if cn_raw is None:
+                title.title = to_simplified(tw_name)
+            if _CJK.search(tw_name):
+                title.display_title = tw_name
+            elif _CJK.search(title.title):
+                # No Taiwan translation on TMDB: show the mainland title in Traditional script.
+                title.display_title = to_traditional(title.title)
+            else:
+                title.display_title = tw_name or title.original_title
+            titles.append(title)
+        return titles, int(shown.get("total_pages") or 0)
+
+    async def genres(self, kind: str) -> list[Genre]:
+        if kind not in KINDS:
+            raise ValueError(f"unknown kind: {kind}")
+        body = await self._get(f"/genre/{kind}/list", {"language": _DISPLAY_LANGUAGE})
+        return [Genre(int(g["id"]), GENRE_NAMES.get(int(g["id"])) or to_traditional(str(g.get("name") or "")))
+                for g in body.get("genres") or [] if g.get("id")]
+
+    async def available(self, platform: str, kind: str, page: int = 1,
+                        genre: int | None = None) -> tuple[list[Title], bool]:
         """Most popular titles currently streaming on the platform. -> (items, has_more)"""
         self._check(platform, kind)
         if not self.configured:
             raise TmdbNotConfigured("尚未設定 TMDB 金鑰")
-        body = await self._get(f"/discover/{kind}", {
+        params = {
             "with_watch_providers": await self._provider_id(platform), "watch_region": _REGION,
-            "with_watch_monetization_types": "flatrate", "sort_by": "popularity.desc",
-            "language": _LANGUAGE, "page": page})
-        items = [_title(r, kind) for r in body.get("results") or [] if r.get("id")]
-        return items, page < int(body.get("total_pages") or 0)
+            "with_watch_monetization_types": "flatrate", "sort_by": "popularity.desc", "page": page}
+        if genre:
+            params["with_genres"] = genre
+        items, total_pages = await self._discover(kind, params)
+        return items, page < total_pages
 
-    async def upcoming(self, platform: str, kind: str) -> list[Title]:
+    async def upcoming(self, platform: str, kind: str, genre: int | None = None) -> list[Title]:
         """Platform originals premiering in the next UPCOMING_DAYS days, soonest first."""
         spec = self._check(platform, kind)
         if not self.configured:
             raise TmdbNotConfigured("尚未設定 TMDB 金鑰")
         start, end = self._window()
+        extra = {"with_genres": genre} if genre else {}
         if kind == "movie":
-            body = await self._get("/discover/movie", {
+            items, _ = await self._discover("movie", {
                 "with_watch_providers": await self._provider_id(platform), "watch_region": _REGION,
                 "primary_release_date.gte": start, "primary_release_date.lte": end,
-                "sort_by": "primary_release_date.asc", "language": _LANGUAGE, "page": 1})
-            items = [_title(r, "movie") for r in body.get("results") or [] if r.get("id")]
+                "sort_by": "primary_release_date.asc", "page": 1, **extra})
             return sorted((t for t in items if t.date), key=lambda t: t.date)
 
-        body = await self._get("/discover/tv", {
+        candidates, _ = await self._discover("tv", {
             "with_networks": "|".join(map(str, spec.network_ids)),
             "air_date.gte": start, "air_date.lte": end,
-            "sort_by": "popularity.desc", "language": _LANGUAGE, "page": 1})
+            "sort_by": "popularity.desc", "page": 1, **extra})
         items = []
-        for raw in (body.get("results") or [])[:_UPCOMING_TV_LOOKUPS]:
-            if not raw.get("id"):
-                continue
+        for title in candidates[:_UPCOMING_TV_LOOKUPS]:
             try:
-                detail = await self._get(f"/tv/{raw['id']}", {"language": _LANGUAGE})
+                detail = await self._get(f"/tv/{title.tmdb_id}", {"language": _LANGUAGE})
             except TmdbNotConfigured:
                 raise
             except TmdbError:
@@ -183,7 +238,7 @@ class TmdbClient:
             nxt = detail.get("next_episode_to_air") or {}
             when = nxt.get("air_date") or ""
             if start <= when <= end:
-                items.append(_title(raw, "tv", when=when, season=nxt.get("season_number")))
+                items.append(replace(title, date=when, season=nxt.get("season_number")))
         return sorted(items, key=lambda t: t.date)
 
     async def find_movie_runtime(self, names: list[str]) -> int | None:

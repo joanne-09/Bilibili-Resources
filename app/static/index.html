@@ -39,6 +39,11 @@
   }
   .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .seg.tight button { padding: 0 14px; border-radius: 10px; }
+  select {
+    min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); font: inherit; max-width: 100%;
+  }
+  select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .bar { display: flex; gap: 10px 18px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
   form { display: flex; gap: 8px; flex-wrap: wrap; }
   input[type="search"] {
@@ -154,6 +159,7 @@
         <button type="button" data-kind="tv">劇</button>
         <button type="button" data-kind="movie">電影</button>
       </div>
+      <select id="genre" aria-label="類型篩選"><option value="">全部類型</option></select>
     </div>
   </section>
 
@@ -173,7 +179,7 @@
   let lastSearchUrl = null;                      // for re-polling a result that is being backfilled
   let running = null;                            // AbortController of the active search/latest request
   let pollTimer = null;
-  const cat = { platform: null, section: "available", kind: "tv", page: 1, items: [], hasMore: false, token: 0 };
+  const cat = { platform: null, section: "available", kind: "tv", genre: "", genresFor: null, page: 1, items: [], hasMore: false, token: 0 };
 
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -450,6 +456,8 @@
   }
 
   function tile(t) {
+    const shown = t.display_title || t.title || t.original_title;   // Traditional Chinese, for reading
+    const searchName = t.title || t.original_title;                 // mainland title, what Bilibili uses
     const b = el("button", "tile");
     b.type = "button";
     const poster = el("div", "poster");
@@ -458,10 +466,10 @@
       img.loading = "lazy";
       img.alt = "";
       img.src = t.poster;
-      img.onerror = () => { img.replaceWith(el("div", "ph", t.title || t.original_title)); };
+      img.onerror = () => { img.replaceWith(el("div", "ph", shown)); };
       poster.append(img);
     } else {
-      poster.append(el("div", "ph", t.title || t.original_title));
+      poster.append(el("div", "ph", shown));
     }
     if (cat.section === "upcoming" && t.date) {
       const [, m, d] = t.date.split("-").map(Number);
@@ -470,20 +478,20 @@
       poster.append(el("div", "when", `${m}月${d}日 · ${rel}`));
     }
     const meta = el("div", "meta");
-    meta.append(el("div", "t1", t.title || t.original_title));
+    meta.append(el("div", "t1", shown));
     const sub = [];
-    if (t.original_title && t.original_title !== t.title) sub.push(t.original_title);
+    if (t.original_title && t.original_title !== shown) sub.push(t.original_title);
     if (cat.section === "upcoming" && t.season && t.season > 1) sub.push(`第 ${t.season} 季`);
     else if (t.year) sub.push(t.year);
     if (sub.length) meta.append(el("div", "t2", sub.join(" · ")));
     b.append(poster, meta);
-    b.setAttribute("aria-label", `在 B 站找完整版：${t.title || t.original_title}`);
+    b.setAttribute("aria-label", `在 B 站找完整版：${shown}`);
     b.addEventListener("click", () => {
-      const name = t.title || t.original_title;
-      input.value = name;
+      input.value = shown;
       kept.search = null;
       selectTab("search");
-      startSearch(name, t.kind, { alt: t.original_title !== name ? t.original_title : "", tmdb_id: t.tmdb_id });
+      startSearch(searchName, t.kind,
+        { alt: t.original_title !== searchName ? t.original_title : "", tmdb_id: t.tmdb_id });
     });
     return b;
   }
@@ -511,7 +519,7 @@
       out.append(el("p", "hint", "美國區、按熱門度排序。點一下就去 B 站找完整版。"));
     }
     if (!cat.items.length) {
-      out.append(el("p", "empty", cat.section === "upcoming"
+      out.append(el("p", "empty", cat.genre ? "這個類型沒有查到內容，換一個類型試試。" : cat.section === "upcoming"
         ? (cat.kind === "movie" ? "這個平台近 90 天的電影上線預告資料不足。" : "這個平台近 90 天沒有查到上線預告。")
         : "沒有查到內容。"));
       return;
@@ -534,6 +542,7 @@
     const first = page === 1;
     if (first) { cat.items = []; showProgress("正在載入片單…"); }
     const params = new URLSearchParams({ platform: cat.platform, section: cat.section, kind: cat.kind, page: String(page) });
+    if (cat.genre) params.set("genre", cat.genre);
     try {
       const resp = await fetch("/api/catalog?" + params.toString(), { cache: "no-store" });
       const body = await resp.json();
@@ -547,6 +556,30 @@
     } catch (err) {
       if (token !== cat.token || tab !== "catalog") return;
       showError("連不上這台電腦上的服務。請確認電腦開著、程式正在執行，而且在同一個 Wi-Fi。");
+    }
+  }
+
+  // Genres differ between series and films, so the list follows the 劇/電影 choice.
+  async function loadGenres() {
+    if (cat.genresFor === cat.kind) return;
+    const kind = cat.kind;
+    const select = $("genre");
+    const all = el("option", "", "全部類型");
+    all.value = "";
+    select.replaceChildren(all);
+    cat.genre = "";
+    cat.genresFor = kind;
+    try {
+      const genres = await (await fetch("/api/genres?kind=" + kind, { cache: "no-store" })).json();
+      if (cat.kind !== kind || !Array.isArray(genres)) return;
+      genres.forEach((g) => {
+        const o = el("option", "", g.name);
+        o.value = String(g.id);
+        select.append(o);
+      });
+      select.hidden = genres.length === 0;
+    } catch (err) {
+      cat.genresFor = null;     // try again next time; the filter is optional
     }
   }
 
@@ -573,6 +606,7 @@
     press(box, "platform", cat.platform);
     press($("section"), "section", cat.section);
     press($("ckind"), "kind", cat.kind);
+    loadGenres();
     if (cat.items.length) renderCatalog(); else loadCatalog(1);
   }
 
@@ -598,8 +632,9 @@
     cat.section = b.dataset.section; press($("section"), "section", cat.section); loadCatalog(1);
   }));
   $("ckind").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
-    cat.kind = b.dataset.kind; press($("ckind"), "kind", cat.kind); loadCatalog(1);
+    cat.kind = b.dataset.kind; press($("ckind"), "kind", cat.kind); loadGenres(); loadCatalog(1);
   }));
+  $("genre").addEventListener("change", (e) => { cat.genre = e.target.value; loadCatalog(1); });
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const q = input.value.trim();

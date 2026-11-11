@@ -149,7 +149,7 @@ class FakeTmdb:
     def __init__(self, configured=True, error=None, runtime=155):
         self.configured, self.error, self._runtime, self.calls = configured, error, runtime, []
 
-    async def available(self, platform, kind, page=1):
+    async def available(self, platform, kind, page=1, genre=None):
         self.calls.append(("available", platform, kind, page))
         if self.error:
             raise self.error
@@ -157,7 +157,7 @@ class FakeTmdb:
             raise ValueError("bad")
         return [Title(1396, kind, "绝命毒师", "Breaking Bad", "2008", "2008-01-20", "https://img/p.jpg")], True
 
-    async def upcoming(self, platform, kind):
+    async def upcoming(self, platform, kind, genre=None):
         self.calls.append(("upcoming", platform, kind))
         if self.error:
             raise self.error
@@ -211,7 +211,7 @@ def test_catalog_available_and_upcoming(fake):
         u = tc.get("/api/catalog", params={"platform": "hbo", "section": "upcoming", "kind": "tv"}).json()
     assert a["configured"] is True and a["has_more"] is True
     assert a["items"][0] == {"tmdb_id": 1396, "kind": "tv", "title": "绝命毒师", "original_title": "Breaking Bad",
-                             "year": "2008", "date": "2008-01-20", "poster": "https://img/p.jpg", "season": None}
+                             "year": "2008", "date": "2008-01-20", "poster": "https://img/p.jpg", "season": None, "display_title": ""}
     assert (u["items"][0]["date"], u["items"][0]["season"], u["has_more"]) == ("2026-11-15", 4, False)
 
 
@@ -346,3 +346,40 @@ def test_detected_film_gets_its_runtime_looked_up_by_name():
         out = lines(tc.get("/api/search", params={"q": "沙丘"}))[-1]
     assert ("find", ("沙丘",)) in tmdb.calls and out["runtime"] == 155
     assert "F3" in [i["bvid"] for i in out["excluded"]]
+
+
+# ---- genres -----------------------------------------------------------------
+
+from app.tmdb import Genre  # noqa: E402
+
+
+class GenreTmdb(FakeTmdb):
+    async def genres(self, kind):
+        self.calls.append(("genres", kind))
+        if self.error:
+            raise self.error
+        return [Genre(18, "劇情"), Genre(35, "喜劇")]
+
+    async def available(self, platform, kind, page=1, genre=None):
+        self.calls.append(("available", platform, kind, page, genre))
+        return [Title(1668, kind, "老友记", "Friends", "1994", "1994-09-22", "", display_title="六人行")], False
+
+
+def test_genres_endpoint(fake):
+    with serve2(fake, GenreTmdb()) as tc:
+        assert tc.get("/api/genres", params={"kind": "tv"}).json() == [{"id": 18, "name": "劇情"}, {"id": 35, "name": "喜劇"}]
+        assert tc.get("/api/genres", params={"kind": "anime"}).status_code == 400
+    with serve2(fake, GenreTmdb(configured=False)) as tc:
+        assert tc.get("/api/genres", params={"kind": "tv"}).json() == []
+    with serve2(fake, GenreTmdb(error=TmdbError("x"))) as tc:
+        assert tc.get("/api/genres", params={"kind": "tv"}).json() == []     # the filter is optional
+
+
+def test_catalog_passes_genre_and_returns_display_title(fake):
+    tmdb = GenreTmdb()
+    with serve2(fake, tmdb) as tc:
+        body = tc.get("/api/catalog", params={"platform": "hbo", "section": "available", "kind": "tv", "genre": 35}).json()
+        bad = tc.get("/api/catalog", params={"platform": "hbo", "section": "available", "kind": "tv", "genre": "abc"})
+    assert ("available", "hbo", "tv", 1, 35) in tmdb.calls
+    assert (body["items"][0]["display_title"], body["items"][0]["title"]) == ("六人行", "老友记")
+    assert bad.status_code in (400, 422)

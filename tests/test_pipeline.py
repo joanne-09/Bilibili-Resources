@@ -61,7 +61,7 @@ async def test_searches_primary_name_five_ways():
     fake = FakeClient()
     await search_series(fake, ["绝命毒师"], noop)
     assert fake.search_calls == [
-        ("绝命毒师 全集", "click", 4), ("绝命毒师", "click", 4), ("绝命毒师 全集", "click", 3),
+        ("绝命毒师", "click", 4), ("绝命毒师 全集", "click", 4), ("绝命毒师 全集", "click", 3),
         ("绝命毒师 全集", "click", 2)]
     assert fake.patience == [True, False, False, False]
 
@@ -95,10 +95,10 @@ async def test_same_season_appears_once():
 
 async def test_second_name_adds_one_search_and_matches():
     en = hit("EN1", "Breaking Bad 全集 1080P", play=7)
-    fake = FakeClient(by_keyword={"Breaking Bad 全集": [en]},
+    fake = FakeClient(by_keyword={"Breaking Bad": [en]},
                       details={"EN1": detail("EN1", "Breaking Bad 全集 1080P", [300] * 10, play=7)})
     out = await search_series(fake, ["绝命毒师", "Breaking Bad"], noop)
-    assert fake.search_calls[2] == ("Breaking Bad 全集", "click", 4)
+    assert fake.search_calls[1] == ("Breaking Bad", "click", 4)
     assert len(fake.search_calls) == 5
     assert [i.bvid for i in out.complete] == ["EN1"]
 

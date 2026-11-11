@@ -80,8 +80,11 @@ async def search_series(client, names: list[str], progress: Progress) -> Outcome
     """names: search names, primary first (see AliasResolver.resolve)."""
     primary = names[0]
     # Ordered by how much each tends to find, since a throttle cuts the list short.
-    plan = [(f"{primary} 全集", 4), (primary, 4)]
-    plan += [(f"{other} 全集", 4) for other in names[1:3]]
+    # Plain-name searches come first: Bilibili answers those reliably, while
+    # "name + 全集" style queries are the ones its risk control tends to refuse.
+    plan = [(primary, 4)]
+    plan += [(other, 4) for other in names[1:3]]
+    plan += [(f"{primary} 全集", 4)]
     # The shorter-duration buckets catch one-video-per-episode collections.
     plan += [(f"{primary} 全集", 3), (f"{primary} 全集", 2)]
 

@@ -131,3 +131,14 @@ def test_collection_of_single_episodes_claiming_all_seasons_stays_complete():
 def test_coverage_with_trailing_quan():
     r = classify(detail("【摩登家庭 十一季全】超清 完整版 未删减 reaction", [360] * 17), ["摩登家庭"])
     assert r.coverage == "全 11 季"
+
+
+def test_single_unclaimed_video_is_not_a_series():
+    r = classify(detail("XDD阿P在家直播做饭 绝命毒师都不敢这么加料！", [65]), ["绝命毒师"])
+    assert (r.status, r.reason) == ("excluded", "單支影片，非整季")
+    r = classify(detail("4K超清《续命之徒：绝命毒师电影》", [174]), ["绝命毒师"])
+    assert (r.status, r.reason) == ("excluded", "單支影片，非整季")
+
+
+def test_single_video_claiming_a_full_season_is_kept():
+    assert classify(detail("2026美剧《某剧 第四季》全集 未删减", [391]), None).status == "complete"

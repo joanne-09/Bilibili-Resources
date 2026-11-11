@@ -191,6 +191,8 @@ def classify(detail: VideoDetail, names: list[str] | None) -> ResultItem:
             return item("uncertain", f"合集只有 {n} 支影片，聲稱全 {seasons} 季", form, form_label)
 
     if not _ANY_CLAIM.search(text):
+        if n == 1:
+            return item("excluded", "單支影片，非整季")
         if (form == "episodic" and n < 6) or (form == "merged" and total < 180 * 60):
             return item("uncertain", "內容偏少，無法確認完整", form, form_label)
 

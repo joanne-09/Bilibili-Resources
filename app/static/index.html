@@ -2,7 +2,334 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="完整美劇">
 <title>B站完整美劇</title>
+<style>
+  :root {
+    --bg: #f6f7f8; --card: #ffffff; --text: #18191c; --muted: #61666d; --line: #e3e5e7;
+    --chip: #f1f2f3; --accent: #fb7299; --accent-text: #ffffff;
+    --ok-bg: #e3f6e8; --ok-text: #14692d; --warn-bg: #fdf0d2; --warn-text: #7a4d00;
+    --err-bg: #fde7e7; --err-text: #9b1c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101113; --card: #1b1c1f; --text: #e9eaec; --muted: #9aa0a8; --line: #2c2e33;
+      --chip: #2a2c31; --ok-bg: #153a22; --ok-text: #8fe0a8; --warn-bg: #45330a; --warn-text: #f3cd7a;
+      --err-bg: #4a1818; --err-text: #ffb4b4;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 16px 16px 48px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tab {
+    min-height: 44px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); font: inherit; cursor: pointer;
+  }
+  .tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  form { display: flex; gap: 8px; }
+  input[type="search"] {
+    flex: 1; min-width: 0; min-height: 48px; padding: 0 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit;
+    -webkit-appearance: none; appearance: none;
+  }
+  input[type="search"]:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 2px;
+  }
+  .btn {
+    min-height: 48px; padding: 0 20px; border-radius: 10px; border: 0; cursor: pointer;
+    background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600;
+  }
+  .btn.small { min-height: 44px; padding: 0 14px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .hint { margin: 8px 2px 0; color: var(--muted); font-size: 13px; }
+  .status { margin: 16px 2px 8px; color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .names { margin: 14px 2px -8px; font-size: 14px; }
+  .spinner {
+    width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line);
+    border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+  .banner { margin: 16px 0; padding: 12px 14px; border-radius: 10px; background: var(--err-bg); color: var(--err-text); }
+  .empty { margin: 28px 2px; color: var(--muted); }
+  .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .row {
+    display: flex; gap: 12px; align-items: center; padding: 12px; min-height: 44px;
+    color: inherit; text-decoration: none; border-top: 1px solid var(--line);
+  }
+  .row:first-child { border-top: 0; }
+  .row:active { background: var(--chip); }
+  .cover {
+    position: relative; flex: none; width: 128px; aspect-ratio: 16 / 10; border-radius: 8px;
+    overflow: hidden; background: var(--chip);
+  }
+  .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cover span {
+    position: absolute; right: 4px; bottom: 4px; padding: 1px 5px; border-radius: 4px;
+    background: rgba(0, 0, 0, .72); color: #fff; font-size: 11px; font-variant-numeric: tabular-nums;
+  }
+  .body { flex: 1; min-width: 0; }
+  .title { font-weight: 600; overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .chip { padding: 2px 8px; border-radius: 5px; background: var(--chip); color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .chip.ok { background: var(--ok-bg); color: var(--ok-text); font-weight: 600; }
+  .chip.warn { background: var(--warn-bg); color: var(--warn-text); font-weight: 600; white-space: normal; }
+  .play { flex: none; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .play small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  details { margin-top: 16px; }
+  summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted); padding: 0 2px; }
+  .dim .row { opacity: .78; }
+  .compact .cover, .compact .play { display: none; }
+  @media (max-width: 520px) {
+    .cover { width: 96px; }
+    .row { align-items: flex-start; }
+  }
+</style>
 </head>
-<body></body>
+<body>
+<main>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-search" data-tab="search">搜尋</button>
+    <button class="tab" role="tab" id="tab-latest" data-tab="latest">最新上線</button>
+  </div>
+
+  <section id="search-controls">
+    <form id="form">
+      <input type="search" id="q" placeholder="輸入劇名，例如：摩登家庭" autocomplete="off"
+             autocapitalize="off" enterkeyhint="search" aria-label="劇名">
+      <button class="btn" id="go" type="submit">搜尋</button>
+    </form>
+    <p class="hint">可輸入英文原名、台灣或大陸譯名，會自動對應。</p>
+  </section>
+
+  <div id="out" aria-live="polite"></div>
+</main>
+
+<script>
+(() => {
+  const out = document.getElementById("out");
+  const form = document.getElementById("form");
+  const input = document.getElementById("q");
+  const goBtn = document.getElementById("go");
+  const controls = document.getElementById("search-controls");
+  const tabs = [...document.querySelectorAll(".tab")];
+  const kept = { search: null, latest: null };   // last rendered state per tab
+  let tab = "search";
+  let running = null;                            // AbortController of the active request
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;   // never innerHTML: titles are untrusted
+    return node;
+  }
+
+  function fmtPlay(n) {
+    if (n >= 1e8) return (n / 1e8).toFixed(1) + " 億";
+    if (n >= 1e4) return (n / 1e4).toFixed(1) + " 萬";
+    return String(n);
+  }
+  function fmtDuration(minutes) {
+    const h = Math.floor(minutes / 60), m = minutes % 60;
+    return h ? `${h} 小時 ${m} 分` : `${m} 分`;
+  }
+  function fmtDate(epoch) {
+    if (!epoch) return "";
+    const d = new Date(epoch * 1000), p = (x) => String(x).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  function fmtClock(epoch) {
+    const d = new Date(epoch * 1000), p = (x) => String(x).padStart(2, "0");
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+  function safeUrl(url) {
+    return typeof url === "string" && url.startsWith("https://") ? url : "#";
+  }
+
+  function row(item) {
+    const a = el("a", "row");
+    a.href = safeUrl(item.url);
+    a.target = "_blank";
+    a.rel = "noopener";
+
+    const cover = el("div", "cover");
+    if (item.cover && item.cover.startsWith("https://")) {
+      const img = el("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.referrerPolicy = "no-referrer";
+      img.src = item.cover + "@320w_200h_1c.webp";
+      img.onerror = () => { img.onerror = null; img.src = item.cover; };
+      cover.append(img);
+    }
+    if (item.total_minutes) cover.append(el("span", "", fmtDuration(item.total_minutes)));
+
+    const body = el("div", "body");
+    body.append(el("div", "title", item.title));
+    const chips = el("div", "chips");
+    if (item.status !== "complete" && item.reason) chips.append(el("span", "chip warn", item.reason));
+    if (item.coverage) chips.append(el("span", "chip ok", item.coverage));
+    if (item.form_label) chips.append(el("span", "chip", item.form_label));
+    if (item.quality && item.quality !== "未知") chips.append(el("span", "chip", item.quality));
+    if (item.subtitle && item.subtitle !== "未知") chips.append(el("span", "chip", item.subtitle));
+    if (item.uploader) chips.append(el("span", "chip", "UP " + item.uploader));
+    const date = fmtDate(item.pubdate);
+    if (date) chips.append(el("span", "chip", date));
+    body.append(chips);
+
+    const play = el("div", "play", fmtPlay(item.play));
+    play.append(el("small", "", "播放"));
+
+    a.append(cover, body, play);
+    return a;
+  }
+
+  function list(items, extraClass) {
+    const box = el("div", "list" + (extraClass ? " " + extraClass : ""));
+    items.forEach((item) => box.append(row(item)));
+    return box;
+  }
+
+  function fold(label, items, extraClass) {
+    const d = el("details", extraClass);
+    d.append(el("summary", "", `${label}（${items.length}）`));
+    d.append(list(items));
+    return d;
+  }
+
+  function showProgress(message) {
+    out.replaceChildren();
+    const status = el("div", "status");
+    status.append(el("div", "spinner"), el("span", "", message));
+    out.append(status);
+  }
+
+  function showError(message) {
+    out.replaceChildren(el("div", "banner", message));
+    out.firstChild.setAttribute("role", "alert");
+  }
+
+  function showResult(r, which) {
+    out.replaceChildren();
+    if (which === "search" && r.names && r.names.length > 1) {
+      out.append(el("div", "names", "同時搜尋：" + r.names.join(" / ")));
+    }
+    const status = el("div", "status");
+    if (which === "search") {
+      status.append(el("span", "",
+        `找到 ${r.complete.length} 個完整版 · 按播放量排序 · 已隱藏 ${r.excluded.length} 個剪輯／解說／網盤引流`));
+    } else {
+      status.append(el("span", "",
+        `找到 ${r.complete.length} 個完整版 · 按上傳時間排序 · 更新於 ${fmtClock(r.fetched_at)}`));
+      const refresh = el("button", "btn small", "重新整理");
+      refresh.type = "button";
+      refresh.addEventListener("click", () => loadLatest(true));
+      status.append(refresh);
+    }
+    out.append(status);
+
+    if (r.complete.length) {
+      out.append(list(r.complete));
+    } else if (!r.uncertain.length) {
+      out.append(el("p", "empty", which === "search"
+        ? "找不到完整版資源。可以試試別的譯名或英文原名。"
+        : "最近 30 天沒有找到新上傳的完整美劇。"));
+    } else {
+      out.append(el("p", "empty", "沒有能確認完整的資源，下面是可能不完整的。"));
+    }
+    if (r.uncertain.length) {
+      const d = fold("可能不完整", r.uncertain, "dim");
+      if (!r.complete.length) d.open = true;
+      out.append(d);
+    }
+    if (r.excluded.length) out.append(fold("已隱藏", r.excluded, "compact"));
+  }
+
+  async function run(url, which) {
+    if (running) running.abort();
+    const controller = new AbortController();
+    running = controller;
+    goBtn.disabled = true;
+    showProgress("連線中…");
+    let finished = false;
+    try {
+      const resp = await fetch(url, { signal: controller.signal, cache: "no-store" });
+      if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const handle = (line) => {
+        if (!line.trim()) return;
+        const event = JSON.parse(line);
+        if (event.type === "progress") {
+          showProgress(event.message);
+        } else if (event.type === "result") {
+          finished = true;
+          kept[which] = event;
+          if (tab === which) showResult(event, which);
+        } else if (event.type === "error") {
+          finished = true;
+          kept[which] = null;
+          showError(event.message);
+        }
+      };
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let cut;
+        while ((cut = buffer.indexOf("\n")) >= 0) {
+          handle(buffer.slice(0, cut));
+          buffer = buffer.slice(cut + 1);
+        }
+      }
+      handle(buffer + decoder.decode());
+      if (!finished) showError("連線中斷，請再試一次。");
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      showError("連不上這台電腦上的服務。請確認電腦開著、程式正在執行，而且在同一個 Wi-Fi。");
+    } finally {
+      if (running === controller) {
+        running = null;
+        goBtn.disabled = false;
+      }
+    }
+  }
+
+  function loadLatest(refresh) {
+    run("/api/latest" + (refresh ? "?refresh=1" : ""), "latest");
+  }
+
+  function selectTab(name, fromHash) {
+    tab = name === "latest" ? "latest" : "search";
+    tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === tab)));
+    controls.hidden = tab !== "search";
+    if (!fromHash) history.replaceState(null, "", "#" + tab);
+    if (running) { running.abort(); running = null; goBtn.disabled = false; }
+    if (kept[tab]) showResult(kept[tab], tab);
+    else if (tab === "latest") loadLatest(false);
+    else out.replaceChildren();
+  }
+
+  tabs.forEach((t) => t.addEventListener("click", () => selectTab(t.dataset.tab)));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q) { showError("請輸入劇名"); return; }
+    input.blur();
+    run("/api/search?q=" + encodeURIComponent(q), "search");
+  });
+  window.addEventListener("hashchange", () => selectTab(location.hash.slice(1), true));
+  selectTab(location.hash.slice(1), true);
+})();
+</script>
+</body>
 </html>

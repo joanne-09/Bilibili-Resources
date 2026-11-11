@@ -142,3 +142,8 @@ def test_single_unclaimed_video_is_not_a_series():
 
 def test_single_video_claiming_a_full_season_is_kept():
     assert classify(detail("2026美剧《某剧 第四季》全集 未删减", [391]), None).status == "complete"
+
+
+def test_game_zone_and_playthrough_titles_are_excluded_for_series_too():
+    assert prefilter(hit("联机版【GTA】洛圣都之旅#合集 绝命毒师", 5402, typename="单机游戏"), ["绝命毒师"]) == "遊戲影片"
+    assert prefilter(hit("绝命毒师 游戏实况 全流程", 300), ["绝命毒师"]) == "遊戲影片"

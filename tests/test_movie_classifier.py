@@ -68,3 +68,23 @@ def test_prefilter_movie():
     assert prefilter_movie(hit("沙丘 预告", 3), DUNE) == "剪輯／片段"
     assert prefilter_movie(hit("沙丘 配乐欣赏", 20), DUNE) == "時長過短"
     assert prefilter_movie(hit("Dune 2021 中字", 155), DUNE) is None
+
+
+BATMAN = ["蝙蝠侠：黑暗骑士", "The Dark Knight"]
+
+
+def test_game_playthroughs_are_not_films():      # seen live: LEGO Batman videos of film-like length
+    for title in ["儿子本地双人合作《乐高蝙蝠侠：黑暗骑士之遗》全流程", "《蝙蝠侠：黑暗骑士》游戏实况 最高难度",
+                  "【4K60帧】蝙蝠侠：黑暗骑士 全Boss战+结局", "蝙蝠侠：黑暗骑士 一命通关攻略"]:
+        r = classify_movie(detail(title, [150]), BATMAN, 152)
+        assert (r.status, r.reason) == ("excluded", "遊戲影片"), title
+
+
+def test_close_reading_videos_are_recaps():      # seen live: 221-minute "逐帧细读"
+    r = classify_movie(detail("超八万字！三个半小时逐帧细读《蝙蝠侠：黑暗骑士》", [221]), BATMAN, 152)
+    assert (r.status, r.reason) == ("excluded", "解說／速看")
+
+
+def test_game_zone_hits_are_prefiltered():
+    h = hit("《乐高蝙蝠侠：黑暗骑士之遗》豪华版", 824, typename="单机游戏")
+    assert prefilter_movie(h, BATMAN) == "遊戲影片"

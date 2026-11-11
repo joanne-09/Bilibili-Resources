@@ -13,7 +13,8 @@ _NUM = r"[0-9一二两三四五六七八九十]+"
 _DASH = r"[-~–—]"
 
 _KEYWORD_GROUPS: list[tuple[str, re.Pattern]] = [
-    ("解說／速看", re.compile("解说|解读|一口气|速看|分钟看完|详解|解析|回顾|盘点|影评|讲解")),
+    ("解說／速看", re.compile("解说|解读|一口气|速看|分钟看完|详解|解析|回顾|盘点|影评|讲解|细读|精读|逐帧|拉片")),
+    ("遊戲影片", re.compile("实况|全流程|通关|攻略|boss战|游戏解说|试玩")),
     ("學英語筆記", re.compile("学英语|单词|笔记|跟读|精讲|口语|听力")),
     ("剪輯／片段", re.compile(r"混剪|片段|名场面|花絮|预告|笑场|(?<![a-z])cut(?![a-z])")),
     ("網盤引流", re.compile("网盘|自取|免费分享|私信|加群")),
@@ -57,6 +58,8 @@ def prefilter(hit: SearchHit, names: list[str] | None) -> str | None:
     reason = _keyword_reason(hit.title)
     if reason:
         return reason
+    if "游戏" in hit.typename:
+        return "遊戲影片"
     if "国产" in hit.typename:
         return "國產劇分區"  # a same-named Chinese drama, not the US series
     if names:

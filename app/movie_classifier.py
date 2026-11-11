@@ -21,6 +21,8 @@ def prefilter_movie(hit: SearchHit, names: list[str]) -> str | None:
     reason = _keyword_reason(hit.title)
     if reason:
         return reason
+    if "游戏" in hit.typename:
+        return "遊戲影片"
     if not _mentions(names, hit.title):
         return "與搜尋無關"
     if hit.duration_s < MIN_FILM_UNIT_S:

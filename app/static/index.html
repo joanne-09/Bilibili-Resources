@@ -27,16 +27,22 @@
     margin: 0; background: var(--bg); color: var(--text);
     font: 16px/1.45 -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", sans-serif;
   }
-  main { max-width: 980px; margin: 0 auto; padding: 16px 16px 48px; }
-  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
-  .tab {
-    min-height: 44px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--line);
+  main { max-width: 980px; margin: 0 auto; padding: 16px 16px 32px; }
+  [hidden] { display: none !important; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab, .seg button {
+    min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line);
     background: var(--card); color: var(--text); font: inherit; cursor: pointer;
   }
-  .tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
-  form { display: flex; gap: 8px; }
+  .tab[aria-selected="true"], .seg button[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600;
+  }
+  .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .seg.tight button { padding: 0 14px; border-radius: 10px; }
+  .bar { display: flex; gap: 10px 18px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
   input[type="search"] {
-    flex: 1; min-width: 0; min-height: 48px; padding: 0 14px; border-radius: 10px;
+    flex: 1 1 220px; min-width: 0; min-height: 48px; padding: 0 14px; border-radius: 10px;
     border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit;
     -webkit-appearance: none; appearance: none;
   }
@@ -48,6 +54,7 @@
     background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600;
   }
   .btn.small { min-height: 44px; padding: 0 14px; }
+  .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); }
   .btn:disabled { opacity: .5; cursor: default; }
   .hint { margin: 8px 2px 0; color: var(--muted); font-size: 13px; }
   .status { margin: 16px 2px 8px; color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -60,6 +67,8 @@
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
   .banner { margin: 16px 0; padding: 12px 14px; border-radius: 10px; background: var(--err-bg); color: var(--err-text); }
   .note { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--warn-text); font-size: 14px; }
+  .note ul { margin: 6px 0 0; padding-left: 20px; }
+  .note a { color: inherit; display: inline-block; padding: 6px 0; overflow-wrap: anywhere; }
   .empty { margin: 28px 2px; color: var(--muted); }
   .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .row {
@@ -72,7 +81,7 @@
     position: relative; flex: none; width: 128px; aspect-ratio: 16 / 10; border-radius: 8px;
     overflow: hidden; background: var(--chip);
   }
-  .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cover img, .poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .cover span {
     position: absolute; right: 4px; bottom: 4px; padding: 1px 5px; border-radius: 4px;
     background: rgba(0, 0, 0, .72); color: #fff; font-size: 11px; font-variant-numeric: tabular-nums;
@@ -89,42 +98,86 @@
   summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted); padding: 0 2px; }
   .dim .row { opacity: .78; }
   .compact .cover, .compact .play { display: none; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
+  .tile {
+    display: flex; flex-direction: column; text-align: left; padding: 0; border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; background: var(--card); color: var(--text); font: inherit; cursor: pointer;
+  }
+  .tile:active { background: var(--chip); }
+  .poster { position: relative; aspect-ratio: 2 / 3; background: var(--chip); display: flex; align-items: center; justify-content: center; }
+  .poster .ph { padding: 10px; text-align: center; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .when {
+    position: absolute; left: 6px; top: 6px; padding: 3px 8px; border-radius: 6px;
+    background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 700;
+  }
+  .tile .meta { padding: 8px 10px 10px; }
+  .tile .t1 { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+  .tile .t2 { color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+  .more { display: flex; justify-content: center; margin-top: 18px; }
+  .steps { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px 16px 38px; margin: 12px 0; }
+  .steps li { margin: 6px 0; }
+  code { background: var(--chip); padding: 1px 6px; border-radius: 5px; font-size: .92em; }
+  footer { max-width: 980px; margin: 0 auto; padding: 0 16px 28px; color: var(--muted); font-size: 12px; }
   @media (max-width: 520px) {
     .cover { width: 96px; }
     .row { align-items: flex-start; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
   }
 </style>
 </head>
 <body>
 <main>
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" id="tab-search" data-tab="search">搜尋</button>
-    <button class="tab" role="tab" id="tab-latest" data-tab="latest">最新上線</button>
+    <button class="tab" role="tab" data-tab="search">搜尋</button>
+    <button class="tab" role="tab" data-tab="latest">最新上線</button>
+    <button class="tab" role="tab" data-tab="catalog">串流片單</button>
   </div>
 
   <section id="search-controls">
     <form id="form">
       <input type="search" id="q" placeholder="輸入劇名，例如：摩登家庭" autocomplete="off"
-             autocapitalize="off" enterkeyhint="search" aria-label="劇名">
+             autocapitalize="off" enterkeyhint="search" aria-label="劇名或片名">
+      <div class="seg tight" id="kind" role="group" aria-label="類型">
+        <button type="button" data-kind="tv">劇</button>
+        <button type="button" data-kind="movie">電影</button>
+      </div>
       <button class="btn" id="go" type="submit">搜尋</button>
     </form>
-    <p class="hint">可輸入英文原名、台灣或大陸譯名，會自動對應。</p>
+    <p class="hint">可輸入英文原名、台灣或大陸譯名，會自動對應。找電影請切到「電影」。</p>
+  </section>
+
+  <section id="catalog-controls" hidden>
+    <div class="bar"><div class="seg" id="platforms" role="group" aria-label="平台"></div></div>
+    <div class="bar">
+      <div class="seg tight" id="section" role="group" aria-label="範圍">
+        <button type="button" data-section="available">現在有的</button>
+        <button type="button" data-section="upcoming">即將上線</button>
+      </div>
+      <div class="seg tight" id="ckind" role="group" aria-label="類型">
+        <button type="button" data-kind="tv">劇</button>
+        <button type="button" data-kind="movie">電影</button>
+      </div>
+    </div>
   </section>
 
   <div id="out" aria-live="polite"></div>
 </main>
+<footer>片單資料來自 TMDB 與 JustWatch。本工具使用 TMDB API，但未經 TMDB 認可或認證。</footer>
 
 <script>
 (() => {
-  const out = document.getElementById("out");
-  const form = document.getElementById("form");
-  const input = document.getElementById("q");
-  const goBtn = document.getElementById("go");
-  const controls = document.getElementById("search-controls");
+  const $ = (id) => document.getElementById(id);
+  const out = $("out"), form = $("form"), input = $("q"), goBtn = $("go");
   const tabs = [...document.querySelectorAll(".tab")];
-  const kept = { search: null, latest: null };   // last rendered state per tab
+  const TABS = ["search", "latest", "catalog"];
+  const kept = { search: null, latest: null };   // last rendered search/latest result
   let tab = "search";
-  let running = null;                            // AbortController of the active request
+  let searchKind = "tv";
+  let lastSearchUrl = null;                      // for re-polling a result that is being backfilled
+  let running = null;                            // AbortController of the active search/latest request
+  let pollTimer = null;
+  const cat = { platform: null, section: "available", kind: "tv", page: 1, items: [], hasMore: false, token: 0 };
 
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -132,7 +185,7 @@
     if (text !== undefined) node.textContent = text;   // never innerHTML: titles are untrusted
     return node;
   }
-
+  const pad = (x) => String(x).padStart(2, "0");
   function fmtPlay(n) {
     if (n >= 1e8) return (n / 1e8).toFixed(1) + " 億";
     if (n >= 1e4) return (n / 1e4).toFixed(1) + " 萬";
@@ -144,16 +197,21 @@
   }
   function fmtDate(epoch) {
     if (!epoch) return "";
-    const d = new Date(epoch * 1000), p = (x) => String(x).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    const d = new Date(epoch * 1000);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
   function fmtClock(epoch) {
-    const d = new Date(epoch * 1000), p = (x) => String(x).padStart(2, "0");
-    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+    const d = new Date(epoch * 1000);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
   function safeUrl(url) {
     return typeof url === "string" && url.startsWith("https://") ? url : "#";
   }
+  function press(group, attr, value) {
+    group.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset[attr] === value)));
+  }
+
+  // ---------- search / latest results ----------
 
   function row(item) {
     const a = el("a", "row");
@@ -188,13 +246,12 @@
 
     const play = el("div", "play", fmtPlay(item.play));
     play.append(el("small", "", "播放"));
-
     a.append(cover, body, play);
     return a;
   }
 
-  function list(items, extraClass) {
-    const box = el("div", "list" + (extraClass ? " " + extraClass : ""));
+  function list(items) {
+    const box = el("div", "list");
     items.forEach((item) => box.append(row(item)));
     return box;
   }
@@ -207,26 +264,50 @@
   }
 
   function showProgress(message) {
-    out.replaceChildren();
     const status = el("div", "status");
     status.append(el("div", "spinner"), el("span", "", message));
-    out.append(status);
+    out.replaceChildren(status);
   }
 
   function showError(message) {
-    out.replaceChildren(el("div", "banner", message));
-    out.firstChild.setAttribute("role", "alert");
+    const banner = el("div", "banner", message);
+    banner.setAttribute("role", "alert");
+    out.replaceChildren(banner);
+  }
+
+  function partialNote(r) {
+    const note = el("div", "note");
+    const pending = r.backfill_pending || 0;
+    note.append(el("div", "", pending
+      ? `B 站拒絕了部分查詢，這次的結果可能不齊全。正在背景慢慢補齊，剩 ${pending} 個查詢，這個畫面會自己更新。`
+      : "B 站拒絕了部分查詢，這次的結果可能不齊全。過幾分鐘再搜一次會更完整。"));
+    if (r.skipped && r.skipped.length) {
+      note.append(el("div", "", "也可以自己在 B 站打開這些搜尋（已帶好時長與排序條件）："));
+      const ul = el("ul");
+      r.skipped.forEach((s) => {
+        const a = el("a", "", "在 B 站打開：" + s.keyword);
+        a.href = safeUrl(s.url);
+        a.target = "_blank";
+        a.rel = "noopener";
+        const li = el("li");
+        li.append(a);
+        ul.append(li);
+      });
+      note.append(ul);
+    }
+    return note;
   }
 
   function showResult(r, which) {
     out.replaceChildren();
+    const what = r.kind === "movie" ? "完整正片" : "完整版";
     if (which === "search" && r.names && r.names.length > 1) {
       out.append(el("div", "names", "同時搜尋：" + r.names.join(" / ")));
     }
     const status = el("div", "status");
     if (which === "search") {
       status.append(el("span", "",
-        `找到 ${r.complete.length} 個完整版 · 按播放量排序 · 已隱藏 ${r.excluded.length} 個剪輯／解說／網盤引流`));
+        `${r.kind === "movie" ? "電影 · " : ""}找到 ${r.complete.length} 個${what} · 按播放量排序 · 已隱藏 ${r.excluded.length} 個剪輯／解說／網盤引流`));
     } else {
       status.append(el("span", "",
         `找到 ${r.complete.length} 個完整版 · 按上傳時間排序 · 更新於 ${fmtClock(r.fetched_at)}`));
@@ -236,15 +317,13 @@
       status.append(refresh);
     }
     out.append(status);
-    if (r.partial) {
-      out.append(el("div", "note", "B 站限制了部分查詢，這次的結果可能不齊全。過幾分鐘再搜一次會更完整。"));
-    }
+    if (r.partial) out.append(partialNote(r));
 
     if (r.complete.length) {
       out.append(list(r.complete));
     } else if (!r.uncertain.length) {
       out.append(el("p", "empty", which === "search"
-        ? "找不到完整版資源。可以試試別的譯名或英文原名。"
+        ? `找不到${what}資源。可以試試別的譯名或英文原名。`
         : "最近 30 天沒有找到新上傳的完整美劇。"));
     } else {
       out.append(el("p", "empty", "沒有能確認完整的資源，下面是可能不完整的。"));
@@ -257,8 +336,35 @@
     if (r.excluded.length) out.append(fold("已隱藏", r.excluded, "compact"));
   }
 
+  function stopPolling() {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  }
+
+  // While a result is being backfilled, ask the local server again now and then.
+  // This never causes extra Bilibili requests: the server answers from its job.
+  function schedulePoll(result) {
+    stopPolling();
+    if (!result.partial || !result.backfill_pending || !lastSearchUrl) return;
+    const url = lastSearchUrl;
+    pollTimer = setTimeout(async () => {
+      pollTimer = null;
+      if (tab !== "search" || running || lastSearchUrl !== url) return;
+      try {
+        const resp = await fetch(url, { cache: "no-store" });
+        const text = await resp.text();
+        const last = text.trim().split("\n").pop();
+        const event = JSON.parse(last);
+        if (event.type !== "result" || tab !== "search" || running || lastSearchUrl !== url) return;
+        kept.search = event;
+        showResult(event, "search");
+        schedulePoll(event);
+      } catch (err) { /* server not reachable right now: stop quietly */ }
+    }, 60000);
+  }
+
   async function run(url, which) {
     if (running) running.abort();
+    stopPolling();
     const controller = new AbortController();
     running = controller;
     goBtn.disabled = true;
@@ -274,15 +380,16 @@
         if (!line.trim()) return;
         const event = JSON.parse(line);
         if (event.type === "progress") {
-          showProgress(event.message);
+          if (tab === which) showProgress(event.message);
         } else if (event.type === "result") {
           finished = true;
           kept[which] = event;
           if (tab === which) showResult(event, which);
+          if (which === "search") schedulePoll(event);
         } else if (event.type === "error") {
           finished = true;
           kept[which] = null;
-          showError(event.message);
+          if (tab === which) showError(event.message);
         }
       };
       for (;;) {
@@ -296,10 +403,10 @@
         }
       }
       handle(buffer + decoder.decode());
-      if (!finished) showError("連線中斷，請再試一次。");
+      if (!finished && tab === which) showError("連線中斷，請再試一次。");
     } catch (err) {
       if (err.name === "AbortError") return;
-      showError("連不上這台電腦上的服務。請確認電腦開著、程式正在執行，而且在同一個 Wi-Fi。");
+      if (tab === which) showError("連不上這台電腦上的服務。請確認電腦開著、程式正在執行，而且在同一個 Wi-Fi。");
     } finally {
       if (running === controller) {
         running = null;
@@ -308,30 +415,195 @@
     }
   }
 
+  function startSearch(q, kind, extra) {
+    const params = new URLSearchParams({ q, kind });
+    if (extra && extra.alt) params.set("alt", extra.alt);
+    if (extra && extra.tmdb_id) params.set("tmdb_id", String(extra.tmdb_id));
+    lastSearchUrl = "/api/search?" + params.toString();
+    run(lastSearchUrl, "search");
+  }
+
+  function setSearchKind(kind) {
+    searchKind = kind === "movie" ? "movie" : "tv";
+    press($("kind"), "kind", searchKind);
+    input.placeholder = searchKind === "movie" ? "輸入片名，例如：沙丘" : "輸入劇名，例如：摩登家庭";
+  }
+
   function loadLatest(refresh) {
     run("/api/latest" + (refresh ? "?refresh=1" : ""), "latest");
   }
 
+  // ---------- streaming catalog ----------
+
+  function daysUntil(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const target = new Date(y, m - 1, d), now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((target - today) / 86400000);
+  }
+
+  function tile(t) {
+    const b = el("button", "tile");
+    b.type = "button";
+    const poster = el("div", "poster");
+    if (t.poster && t.poster.startsWith("https://")) {
+      const img = el("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = t.poster;
+      img.onerror = () => { img.replaceWith(el("div", "ph", t.title || t.original_title)); };
+      poster.append(img);
+    } else {
+      poster.append(el("div", "ph", t.title || t.original_title));
+    }
+    if (cat.section === "upcoming" && t.date) {
+      const [, m, d] = t.date.split("-").map(Number);
+      const n = daysUntil(t.date);
+      const rel = n <= 0 ? "今天" : `還有 ${n} 天`;
+      poster.append(el("div", "when", `${m}月${d}日 · ${rel}`));
+    }
+    const meta = el("div", "meta");
+    meta.append(el("div", "t1", t.title || t.original_title));
+    const sub = [];
+    if (t.original_title && t.original_title !== t.title) sub.push(t.original_title);
+    if (cat.section === "upcoming" && t.season && t.season > 1) sub.push(`第 ${t.season} 季`);
+    else if (t.year) sub.push(t.year);
+    if (sub.length) meta.append(el("div", "t2", sub.join(" · ")));
+    b.append(poster, meta);
+    b.setAttribute("aria-label", `在 B 站找完整版：${t.title || t.original_title}`);
+    b.addEventListener("click", () => {
+      const name = t.title || t.original_title;
+      setSearchKind(t.kind);
+      input.value = name;
+      kept.search = null;
+      selectTab("search");
+      startSearch(name, t.kind, { alt: t.original_title !== name ? t.original_title : "", tmdb_id: t.tmdb_id });
+    });
+    return b;
+  }
+
+  function setupSteps() {
+    const box = el("div");
+    box.append(el("p", "", "串流片單需要一組免費的 TMDB 金鑰，設定一次就好："));
+    const ol = el("ol", "steps");
+    const s1 = el("li", "", "到 themoviedb.org 註冊並登入，在「設定 → API」申請一組 API 金鑰。");
+    const s2 = el("li");
+    s2.append("在這台電腦的專案資料夾裡，把 ", el("code", "", "config.example.toml"), " 複製一份並改名為 ",
+      el("code", "", "config.local.toml"), "，把金鑰貼進引號裡存檔。");
+    const s3 = el("li");
+    s3.append("關掉再重新執行 ", el("code", "", "start.bat"), "。");
+    ol.append(s1, s2, s3);
+    box.append(ol, el("p", "hint", "沒有設定也沒關係，「搜尋」和「最新上線」照常可用。"));
+    return box;
+  }
+
+  function renderCatalog() {
+    out.replaceChildren();
+    if (cat.section === "upcoming") {
+      out.append(el("p", "hint", "只包含該平台原創作品的首播／新一季日期（美國區、未來 90 天），不含授權片的上架預告。"));
+    } else {
+      out.append(el("p", "hint", "美國區、按熱門度排序。點一下就去 B 站找完整版。"));
+    }
+    if (!cat.items.length) {
+      out.append(el("p", "empty", cat.section === "upcoming"
+        ? (cat.kind === "movie" ? "這個平台近 90 天的電影上線預告資料不足。" : "這個平台近 90 天沒有查到上線預告。")
+        : "沒有查到內容。"));
+      return;
+    }
+    const grid = el("div", "grid");
+    cat.items.forEach((t) => grid.append(tile(t)));
+    out.append(grid);
+    if (cat.hasMore) {
+      const wrap = el("div", "more");
+      const more = el("button", "btn ghost", "載入更多");
+      more.type = "button";
+      more.addEventListener("click", () => { more.disabled = true; loadCatalog(cat.page + 1); });
+      wrap.append(more);
+      out.append(wrap);
+    }
+  }
+
+  async function loadCatalog(page) {
+    const token = ++cat.token;
+    const first = page === 1;
+    if (first) { cat.items = []; showProgress("正在載入片單…"); }
+    const params = new URLSearchParams({ platform: cat.platform, section: cat.section, kind: cat.kind, page: String(page) });
+    try {
+      const resp = await fetch("/api/catalog?" + params.toString(), { cache: "no-store" });
+      const body = await resp.json();
+      if (token !== cat.token || tab !== "catalog") return;
+      if (!resp.ok) { showError(body.error || "無法取得片單資料"); return; }
+      if (!body.configured) { out.replaceChildren(setupSteps()); return; }
+      cat.page = page;
+      cat.items = first ? body.items : cat.items.concat(body.items);
+      cat.hasMore = body.has_more;
+      renderCatalog();
+    } catch (err) {
+      if (token !== cat.token || tab !== "catalog") return;
+      showError("連不上這台電腦上的服務。請確認電腦開著、程式正在執行，而且在同一個 Wi-Fi。");
+    }
+  }
+
+  async function openCatalog() {
+    const box = $("platforms");
+    if (!box.children.length) {
+      showProgress("正在載入片單…");
+      try {
+        const platforms = await (await fetch("/api/platforms", { cache: "no-store" })).json();
+        platforms.forEach((p) => {
+          const b = el("button", "", p.label);
+          b.type = "button";
+          b.dataset.platform = p.id;
+          b.addEventListener("click", () => { cat.platform = p.id; press(box, "platform", p.id); loadCatalog(1); });
+          box.append(b);
+        });
+        cat.platform = platforms[0].id;
+      } catch (err) {
+        showError("連不上這台電腦上的服務。請確認電腦開著、程式正在執行，而且在同一個 Wi-Fi。");
+        return;
+      }
+    }
+    if (tab !== "catalog") return;
+    press(box, "platform", cat.platform);
+    press($("section"), "section", cat.section);
+    press($("ckind"), "kind", cat.kind);
+    if (cat.items.length) renderCatalog(); else loadCatalog(1);
+  }
+
+  // ---------- tabs & wiring ----------
+
   function selectTab(name, fromHash) {
-    tab = name === "latest" ? "latest" : "search";
+    tab = TABS.includes(name) ? name : "search";
     tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === tab)));
-    controls.hidden = tab !== "search";
-    if (!fromHash) history.replaceState(null, "", "#" + tab);
+    $("search-controls").hidden = tab !== "search";
+    $("catalog-controls").hidden = tab !== "catalog";
+    if (!fromHash && location.hash !== "#" + tab) history.replaceState(null, "", "#" + tab);
     if (running) { running.abort(); running = null; goBtn.disabled = false; }
-    if (kept[tab]) showResult(kept[tab], tab);
+    stopPolling();
+    cat.token++;
+    if (tab === "catalog") openCatalog();
+    else if (kept[tab]) { showResult(kept[tab], tab); if (tab === "search") schedulePoll(kept[tab]); }
     else if (tab === "latest") loadLatest(false);
     else out.replaceChildren();
   }
 
   tabs.forEach((t) => t.addEventListener("click", () => selectTab(t.dataset.tab)));
+  $("kind").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => setSearchKind(b.dataset.kind)));
+  $("section").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    cat.section = b.dataset.section; press($("section"), "section", cat.section); loadCatalog(1);
+  }));
+  $("ckind").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    cat.kind = b.dataset.kind; press($("ckind"), "kind", cat.kind); loadCatalog(1);
+  }));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const q = input.value.trim();
-    if (!q) { showError("請輸入劇名"); return; }
+    if (!q) { showError(searchKind === "movie" ? "請輸入片名" : "請輸入劇名"); return; }
     input.blur();
-    run("/api/search?q=" + encodeURIComponent(q), "search");
+    startSearch(q, searchKind);
   });
   window.addEventListener("hashchange", () => selectTab(location.hash.slice(1), true));
+  setSearchKind("tv");
   selectTab(location.hash.slice(1), true);
 })();
 </script>

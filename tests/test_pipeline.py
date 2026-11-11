@@ -152,3 +152,31 @@ async def test_progress_is_reported():
     await search_series(FakeClient(hits, details), ["摩登家庭"], collect)
     assert msgs[0] == "正在查 B 站（1/5）…"
     assert any(m.startswith("正在確認候選") for m in msgs)
+
+
+class FlakyViewClient(FakeClient):
+    """view() starts failing (network down / blocked) from the Nth call on."""
+
+    def __init__(self, *args, view_fails_from=1, **kw):
+        super().__init__(*args, **kw)
+        self.view_fails_from = view_fails_from
+
+    async def view(self, bvid):
+        self.view_calls.append(bvid)
+        if len(self.view_calls) >= self.view_fails_from:
+            raise BiliError("無法連線到 B 站")
+        return self.details.get(bvid)
+
+
+async def test_detail_lookups_all_failing_is_an_error_not_an_empty_result():
+    hits, details = modern_family()
+    with pytest.raises(BiliError):
+        await search_series(FlakyViewClient(hits, details, view_fails_from=1), ["摩登家庭"], noop)
+
+
+async def test_detail_lookup_failing_midway_keeps_results_and_marks_partial():
+    hits, details = modern_family()
+    fake = FlakyViewClient(hits, details, view_fails_from=2)
+    out = await search_series(fake, ["摩登家庭"], noop)
+    assert [i.bvid for i in out.complete] == ["B"]
+    assert out.partial is True and len(fake.view_calls) == 2

@@ -56,7 +56,13 @@ async def _judge(client, candidates: list[SearchHit], names: list[str] | None,
             await progress(f"正在確認候選（{i}/{len(candidates)}）· 已找到 {len(out.complete)} 個完整版")
         if h.bvid in covered:
             continue
-        detail = await client.view(h.bvid)
+        try:
+            detail = await client.view(h.bvid)
+        except BiliError:
+            if not seen_keys:
+                raise  # nothing confirmed at all: report the failure, not "no results"
+            out.partial = True
+            return
         if detail is None:
             continue  # taken down since it was indexed
         item = classify(detail, names)

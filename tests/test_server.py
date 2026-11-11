@@ -134,3 +134,163 @@ def test_partial_result_is_flagged_and_only_briefly_cached():
     # an immediate retry must not hammer Bilibili again while it is pushing back
     assert second["cached"] is True and second["partial"] is True
     assert len(client.search_calls) == 2
+
+
+# ---- catalog, movie mode, backfill -----------------------------------------
+
+from app.tmdb import Title, TmdbError  # noqa: E402
+from tests.test_pipeline import detail, dune, hit  # noqa: E402
+
+
+class FakeTmdb:
+    def __init__(self, configured=True, error=None, runtime=155):
+        self.configured, self.error, self._runtime, self.calls = configured, error, runtime, []
+
+    async def available(self, platform, kind, page=1):
+        self.calls.append(("available", platform, kind, page))
+        if self.error:
+            raise self.error
+        if platform not in ("netflix", "hbo", "prime") or kind not in ("tv", "movie"):
+            raise ValueError("bad")
+        return [Title(1396, kind, "绝命毒师", "Breaking Bad", "2008", "2008-01-20", "https://img/p.jpg")], True
+
+    async def upcoming(self, platform, kind):
+        self.calls.append(("upcoming", platform, kind))
+        if self.error:
+            raise self.error
+        return [Title(5, kind, "镀金时代", "The Gilded Age", "2022", "2026-11-15", "", season=4)]
+
+    async def runtime(self, movie_id):
+        self.calls.append(("runtime", movie_id))
+        if self.error:
+            raise self.error
+        return self._runtime
+
+    async def aclose(self):
+        pass
+
+
+class CountingResolver(FakeResolver):
+    calls = 0
+
+    async def resolve(self, query):
+        CountingResolver.calls += 1
+        return await super().resolve(query)
+
+
+def serve2(fake, tmdb=None, resolver=None):
+    return TestClient(create_app(client=fake, resolver=resolver or FakeResolver(),
+                                 tmdb=tmdb or FakeTmdb(), backfill_interval=None))
+
+
+def test_platforms_listed(fake):
+    with serve2(fake) as tc:
+        assert tc.get("/api/platforms").json() == [
+            {"id": "netflix", "label": "Netflix"}, {"id": "hbo", "label": "HBO Max"},
+            {"id": "prime", "label": "Prime Video"}]
+
+
+def test_catalog_not_configured_says_so(fake):
+    tmdb = FakeTmdb(configured=False)
+    with serve2(fake, tmdb) as tc:
+        resp = tc.get("/api/catalog", params={"platform": "netflix", "section": "available", "kind": "tv"})
+    assert resp.status_code == 200
+    assert resp.json() == {"configured": False, "items": [], "has_more": False}
+    assert tmdb.calls == []
+
+
+def test_catalog_available_and_upcoming(fake):
+    with serve2(fake) as tc:
+        a = tc.get("/api/catalog", params={"platform": "netflix", "section": "available", "kind": "tv", "page": 2}).json()
+        u = tc.get("/api/catalog", params={"platform": "hbo", "section": "upcoming", "kind": "tv"}).json()
+    assert a["configured"] is True and a["has_more"] is True
+    assert a["items"][0] == {"tmdb_id": 1396, "kind": "tv", "title": "绝命毒师", "original_title": "Breaking Bad",
+                             "year": "2008", "date": "2008-01-20", "poster": "https://img/p.jpg", "season": None}
+    assert (u["items"][0]["date"], u["items"][0]["season"], u["has_more"]) == ("2026-11-15", 4, False)
+
+
+def test_catalog_tmdb_error_is_a_502_with_the_message(fake):
+    with serve2(fake, FakeTmdb(error=TmdbError("TMDB 金鑰無效，請檢查 config.local.toml"))) as tc:
+        resp = tc.get("/api/catalog", params={"platform": "netflix", "section": "available", "kind": "tv"})
+    assert resp.status_code == 502 and resp.json() == {"error": "TMDB 金鑰無效，請檢查 config.local.toml"}
+
+
+@pytest.mark.parametrize("params", [
+    {"platform": "hulu", "section": "available", "kind": "tv"},
+    {"platform": "netflix", "section": "soon", "kind": "tv"},
+    {"platform": "netflix", "section": "available", "kind": "anime"},
+    {"platform": "netflix", "section": "available", "kind": "tv", "page": 0}])
+def test_catalog_bad_params_are_400(fake, params):
+    with serve2(fake) as tc:
+        resp = tc.get("/api/catalog", params=params)
+    assert resp.status_code == 400 and resp.json() == {"error": "參數錯誤"}
+
+
+def test_search_with_alt_name_skips_the_resolver(fake):
+    CountingResolver.calls = 0
+    with serve2(fake, resolver=CountingResolver()) as tc:
+        out = lines(tc.get("/api/search", params={"q": "摩登家庭", "alt": "Modern Family"}))[-1]
+    assert out["names"] == ["摩登家庭", "Modern Family"] and CountingResolver.calls == 0
+    assert out["kind"] == "tv"
+
+
+def test_movie_search_from_catalog_uses_tmdb_runtime():
+    hits, details = dune()
+    tmdb = FakeTmdb(runtime=155)
+    with serve2(FakeClient(hits, details), tmdb) as tc:
+        out = lines(tc.get("/api/search", params={"q": "沙丘", "alt": "Dune", "kind": "movie", "tmdb_id": 7}))[-1]
+    assert ("runtime", 7) in tmdb.calls
+    assert out["kind"] == "movie" and [i["bvid"] for i in out["complete"]] == ["F1"]
+    assert "F3" in [i["bvid"] for i in out["excluded"]]      # 62 min vs 155: needs the runtime to be excluded
+
+
+def test_movie_search_survives_runtime_lookup_failure():
+    hits, details = dune()
+    with serve2(FakeClient(hits, details), FakeTmdb(error=TmdbError("x"))) as tc:
+        out = lines(tc.get("/api/search", params={"q": "沙丘", "kind": "movie", "tmdb_id": 7}))[-1]
+    assert out["type"] == "result" and [i["bvid"] for i in out["complete"]] == ["F1"]
+
+
+def test_tv_and_movie_results_are_cached_separately():
+    hits, details = dune()
+    client = FakeClient(hits, details)
+    with serve2(client) as tc:
+        tc.get("/api/search", params={"q": "沙丘", "kind": "movie"})
+        out = lines(tc.get("/api/search", params={"q": "沙丘", "kind": "tv"}))[-1]
+    assert out["cached"] is False and out["kind"] == "tv"
+
+
+def test_unknown_kind_is_an_error_event(fake):
+    with serve2(fake) as tc:
+        out = lines(tc.get("/api/search", params={"q": "x", "kind": "anime"}))
+    assert out == [{"type": "error", "message": "參數錯誤"}]
+
+
+def test_partial_result_lists_skipped_links_and_backfills():
+    hits, details = modern_family()
+    client = FakeClient(hits, details, fail_on={2})
+    app = create_app(client=client, resolver=FakeResolver(), tmdb=FakeTmdb(), backfill_interval=None)
+    with TestClient(app) as tc:
+        first = lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]
+        assert first["partial"] is True and first["backfill_pending"] == 3
+        assert first["skipped"][0] == {
+            "keyword": "摩登家庭 全集", "duration": 4,
+            "url": "https://search.bilibili.com/all?keyword=%E6%91%A9%E7%99%BB%E5%AE%B6%E5%BA%AD%20%E5%85%A8%E9%9B%86"
+                   "&order=click&duration=4"}
+        calls = len(client.search_calls)
+        again = lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]
+        assert again["cached"] is True and len(client.search_calls) == calls   # served from the backfill job
+
+        client.details["N"] = detail("N", "摩登家庭 全11季 蓝光 未删减", [380] * 20, play=50)
+        client.by_keyword["摩登家庭 全集"] = [hit("N", "摩登家庭 全11季 蓝光 未删减", play=50)]
+        for _ in range(3):
+            tc.portal.call(app.state.backfill_tick)
+        done = lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]
+    assert [i["bvid"] for i in done["complete"]] == ["B", "N", "A"]
+    assert (done["partial"], done["backfill_pending"], done["skipped"], done["cached"]) == (False, 0, [], True)
+
+
+def test_search_and_latest_work_without_tmdb_config(fake):
+    with serve2(fake, FakeTmdb(configured=False)) as tc:
+        assert lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]["type"] == "result"
+        assert lines(tc.get("/api/latest"))[-1]["type"] == "result"

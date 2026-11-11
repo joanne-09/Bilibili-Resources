@@ -145,14 +145,14 @@
              autocapitalize="off" enterkeyhint="search" aria-label="劇名或片名">
       <button class="btn" id="go" type="submit">搜尋</button>
     </form>
-    <p class="hint">劇或電影都可以搜；可輸入英文原名、台灣或大陸譯名，會自動對應。</p>
+    <p class="hint">劇或電影都可以搜，可輸入英文原名、台灣或大陸譯名。</p>
   </section>
 
   <section id="catalog-controls" hidden>
     <div class="bar"><div class="seg" id="platforms" role="group" aria-label="平台"></div></div>
     <div class="bar">
       <div class="seg tight" id="section" role="group" aria-label="範圍">
-        <button type="button" data-section="available">現在有的</button>
+        <button type="button" data-section="available">已上架</button>
         <button type="button" data-section="upcoming">即將上線</button>
       </div>
       <div class="seg tight" id="ckind" role="group" aria-label="類型">
@@ -165,7 +165,6 @@
 
   <div id="out" aria-live="polite"></div>
 </main>
-<footer>片單資料來自 TMDB 與 JustWatch。本工具使用 TMDB API，但未經 TMDB 認可或認證。</footer>
 
 <script>
 (() => {
@@ -284,7 +283,7 @@
       ? `B 站拒絕了部分查詢，這次的結果可能不齊全。正在背景慢慢補齊，剩 ${pending} 個查詢，這個畫面會自己更新。`
       : "B 站拒絕了部分查詢，這次的結果可能不齊全。過幾分鐘再搜一次會更完整。"));
     if (r.skipped && r.skipped.length) {
-      note.append(el("div", "", "也可以自己在 B 站打開這些搜尋（已帶好時長與排序條件）："));
+      note.append(el("div", "", "也可以自己在 B 站打開這些搜尋："));
       const ul = el("ul");
       r.skipped.forEach((s) => {
         const a = el("a", "", "在 B 站打開：" + s.keyword);
@@ -305,7 +304,7 @@
   function kindSwitch(r) {
     const isMovie = r.kind === "movie";
     const line = el("div", "status");
-    line.append(el("span", "", isMovie ? "這次當成「電影」來判斷。" : "這次當成「劇集」來判斷。"));
+    line.append(el("span", "", isMovie ? "以「電影」模式搜尋" : "以「劇集」模式搜尋"));
     const other = el("button", "btn small ghost", isMovie ? "其實是劇集，重搜" : "其實是電影，重搜");
     other.type = "button";
     const q = lastQuery;
@@ -326,7 +325,7 @@
         `${r.kind === "movie" ? "電影 · " : ""}找到 ${r.complete.length} 個${what} · 按播放量排序 · 已隱藏 ${r.excluded.length} 個剪輯／解說／網盤引流`));
     } else {
       status.append(el("span", "",
-        `找到 ${r.complete.length} 個完整版 · 按上傳時間排序 · 更新於 ${fmtClock(r.fetched_at)}`));
+        `找到 ${r.complete.length} 個 · 按上傳時間排序 · 更新於 ${fmtClock(r.fetched_at)}`));
       const refresh = el("button", "btn small", "重新整理");
       refresh.type = "button";
       refresh.addEventListener("click", () => loadLatest(true));
@@ -343,7 +342,7 @@
         ? `找不到${what}資源。可以試試別的譯名或英文原名。`
         : "最近 30 天沒有找到新上傳的完整美劇。"));
     } else {
-      out.append(el("p", "empty", "沒有能確認完整的資源，下面是可能不完整的。"));
+      out.append(el("p", "empty", "沒有確認完整的資源，以下是可能不完整的。"));
     }
     if (r.uncertain.length) {
       const d = fold("可能不完整", r.uncertain, "dim");
@@ -579,7 +578,7 @@
         const o = el("option", "", g.name);
         o.value = String(g.id);
         if (g.id < 0) {
-          if (!extras) { extras = el("optgroup"); extras.label = "更多（依關鍵字，較不精確）"; select.append(extras); }
+          if (!extras) { extras = el("optgroup"); extras.label = "更多（依關鍵字）"; select.append(extras); }
           extras.append(o);
         } else {
           select.append(o);

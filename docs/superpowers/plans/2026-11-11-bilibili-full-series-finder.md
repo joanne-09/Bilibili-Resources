@@ -31,6 +31,48 @@
 4. Empty / whitespace-only query must return a clear error event, with no Bilibili request made — test in Task 5.
 5. A title containing HTML (`<img onerror=…>`) must render as literal text — manual check in Task 6.
 
+## Amendment (2026-11-11): search by English or Taiwan title
+
+Added by the user after plan review; spec §9 updated. It changes these points in the tasks below:
+
+- **New module `app/aliases.py`, built as Task 3b** (after Task 3, before Task 4), test file `tests/test_aliases.py`:
+
+  ```python
+  has_cjk(text: str) -> bool
+  class AliasResolver:
+      def __init__(self, transport: httpx.AsyncBaseTransport | None = None): ...
+      async def resolve(self, query: str) -> list[str]   # never raises
+      async def aclose(self) -> None
+  ```
+
+  - `resolve` returns the search names, primary first, deduped by `normalize()`: `[chinese_name, english_name]` when found, always including `to_simplified(query.strip())`. The primary is the Chinese name whenever one is known.
+  - Source 1 — Douban: GET `https://movie.douban.com/j/subject_suggest?q=` (desktop UA, `Referer: https://movie.douban.com/`, timeout 6 s). Take the first entry whose `episode` is non-empty and where `normalize(query)` is contained in `normalize(title)` or `normalize(sub_title)`. Chinese name = `title` with a trailing `第…季` (and surrounding spaces) removed; English name = `sub_title.strip()`.
+  - Source 2 — Wikidata, only when Douban gave nothing and the query has no CJK: GET `https://www.wikidata.org/w/api.php?action=wbsearchentities&language=en&uselang=zh-cn&format=json&limit=3` (UA `series-title-lookup/0.1`). Take the first entry whose `label` contains CJK and whose `description` contains `电视`, `剧`, or `television series`, excluding descriptions containing `season` or `集别`.
+  - Any HTTP error, timeout, or bad JSON → fall through; final fallback is `[to_simplified(query.strip())]`.
+  - Results cached in a `TTLCache(86400)` keyed by `normalize(query)`.
+  - Tests (MockTransport): `breaking bad` → `["绝命毒师", "breaking bad"]`-equivalent (assert `names[0] == "绝命毒师"` and `"Breaking Bad"` in names); `六人行` → `names[0] == "老友记"`; Douban `[]` + Wikidata hit for `wednesday` → `names[0] == "星期三"`; Douban 500 and Wikidata timeout → `["wednesday"]`; an unrelated Douban suggestion (title/sub_title not containing the query) is ignored; second call for the same query makes no HTTP request; a movie entry (`episode == ""`) is skipped.
+
+- **Task 2:** `prefilter(hit, names: list[str] | None)` and `classify(detail, names: list[str] | None)` take a list instead of one string. "Relevant" = any name's `normalize()` is contained in the normalized title; a season is used when any name is contained in the season title. Existing tests pass `["摩登家庭"]` in place of `"摩登家庭"`. Add:
+
+  ```python
+  def test_either_name_makes_a_title_relevant():
+      names = ["绝命毒师", "Breaking Bad"]
+      assert prefilter(hit("Breaking.Bad S01-S05 1080P 全集", 2900), names) is None
+      assert prefilter(hit("绝命毒师 全五季 未删减", 2900), names) is None
+      assert prefilter(hit("以前的化学课都弱爆了", 90), names) == "與搜尋無關"
+  ```
+
+- **Task 4:** `search_series(client, names: list[str], progress)`. The five searches run on `names[0]`; for each further name add one search `(name + " 全集", 4)` (max 2 extra). `Outcome` gains `names: list[str]`.
+  ```python
+  async def test_second_name_adds_one_search_and_matches():
+      out = await search_series(fake, ["绝命毒师", "Breaking Bad"], noop)
+      assert fake.search_calls[5] == ("Breaking Bad 全集", "click", 4)
+      assert "EN1" in [i.bvid for i in out.complete]      # hit titled "Breaking Bad 全集 1080P"
+  ```
+- **Task 5:** the server owns one `AliasResolver`; `/api/search` emits progress `正在查詢劇名對應…`, calls `resolve(q)`, then `search_series`. The search cache key is `"|".join(normalize(n) for n in names)`, so `breaking bad` and `绝命毒师` share one cached result. The `result` event gains `"names": [...]`. `create_app(client=None, resolver=None)`. Add a test that `q=breaking bad` with a fake resolver returning `["绝命毒师", "Breaking Bad"]` yields `result["names"] == ["绝命毒师", "Breaking Bad"]` and that a following `q=绝命毒师` (resolver returns the same list) is `cached: true`.
+- **Task 6:** hint text becomes `可輸入英文原名、台灣或大陸譯名，會自動對應。`; when `names` has more than one entry show `同時搜尋：{names joined by " / "}` above the summary line. Empty-result text becomes `找不到完整版資源。可以試試別的譯名或英文原名。`
+- **Task 7:** live-check `breaking bad` vs `绝命毒师` (same result list expected) and `六人行`.
+
 ## File Structure
 
 | File | Responsibility |

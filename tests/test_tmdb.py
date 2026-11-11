@@ -252,7 +252,7 @@ async def test_untranslated_title_shows_the_original():
 async def test_genres_are_listed_in_traditional_chinese():
     api = Api({"/genre/tv/list": {"genres": [{"id": 18, "name": "劇情"}, {"id": 35, "name": "喜劇"}]}})
     genres = await client(api).genres("tv")
-    assert [(g.id, g.name) for g in genres] == [(18, "劇情"), (35, "喜劇")]
+    assert [(g.id, g.name) for g in genres if g.id > 0] == [(18, "劇情"), (35, "喜劇")]
     assert api.last("/genre/tv/list").url.params["language"] == "zh-TW"
 
 
@@ -273,4 +273,30 @@ async def test_genre_filter_is_sent_for_available_and_upcoming():
 async def test_genre_names_are_traditional_even_when_tmdb_sends_simplified_or_english():
     api = Api({"/genre/tv/list": {"genres": [
         {"id": 10765, "name": "Sci-Fi & Fantasy"}, {"id": 35, "name": "喜剧"}, {"id": 99999, "name": "新类型"}]}})
-    assert [g.name for g in await client(api).genres("tv")] == ["科幻與奇幻", "喜劇", "新類型"]
+    assert [g.name for g in await client(api).genres("tv") if g.id > 0] == ["科幻與奇幻", "喜劇", "新類型"]
+
+
+# ---- extra TV categories TMDB has no genre for (Romance, Horror, ...) -------
+
+async def test_tv_genres_include_keyword_based_extras_after_the_official_ones():
+    api = Api({"/genre/tv/list": {"genres": [{"id": 18, "name": "剧情"}]}})
+    genres = await client(api).genres("tv")
+    names = [g.name for g in genres]
+    assert names[0] == "劇情" and {"愛情", "恐怖", "驚悚"} <= set(names)
+    assert all(g.id < 0 for g in genres if g.name in ("愛情", "恐怖", "驚悚"))   # negative id = keyword filter
+    assert next(g.id for g in genres if g.name == "愛情") == -9840
+
+
+async def test_movie_genres_get_no_extras():
+    api = Api({"/genre/movie/list": {"genres": [{"id": 10749, "name": "爱情"}]}})
+    assert [(g.id, g.name) for g in await client(api).genres("movie")] == [(10749, "愛情")]
+
+
+async def test_negative_genre_filters_by_keyword_instead_of_genre():
+    api = Api({"/discover/tv": {"page": 1, "total_pages": 1, "results": []}})
+    c = client(api)
+    await c.available("netflix", "tv", genre=-9840)
+    p = api.last("/discover/tv").url.params
+    assert p["with_keywords"] == "9840" and "with_genres" not in p
+    await c.upcoming("netflix", "tv", genre=-9840)
+    assert api.last("/discover/tv").url.params["with_keywords"] == "9840"

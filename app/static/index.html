@@ -572,10 +572,18 @@
     try {
       const genres = await (await fetch("/api/genres?kind=" + kind, { cache: "no-store" })).json();
       if (cat.kind !== kind || !Array.isArray(genres)) return;
+      // Negative ids are keyword-based categories (TMDB has no such genre for
+      // series, e.g. Romance); they are looser, so they get their own group.
+      let extras = null;
       genres.forEach((g) => {
         const o = el("option", "", g.name);
         o.value = String(g.id);
-        select.append(o);
+        if (g.id < 0) {
+          if (!extras) { extras = el("optgroup"); extras.label = "更多（依關鍵字，較不精確）"; select.append(extras); }
+          extras.append(o);
+        } else {
+          select.append(o);
+        }
       });
       select.hidden = genres.length === 0;
     } catch (err) {

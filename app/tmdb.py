@@ -35,6 +35,22 @@ GENRE_NAMES = {
     10766: "肥皂劇", 10767: "脫口秀", 10768: "戰爭與政治",
 }
 
+# TMDB's official TV genre list has no Romance, Horror or Thriller (those exist
+# only for films). TMDB keywords fill the gap: (keyword id, name). They are
+# exposed as genres with a negative id; keyword tagging is looser than genres.
+TV_KEYWORD_CATEGORIES = [
+    (9840, "愛情"), (315058, "恐怖"), (316362, "驚悚"), (15060, "歷史古裝"), (193171, "情境喜劇"),
+    (193400, "青春校園"), (9715, "超級英雄"), (258786, "醫療"), (222517, "律政"),
+    (9672, "真實故事改編"), (11162, "迷你影集"),
+]
+
+
+def _genre_filter(genre: int | None) -> dict:
+    """Discover parameters for a genre id (positive) or keyword category (negative)."""
+    if not genre:
+        return {}
+    return {"with_keywords": -genre} if genre < 0 else {"with_genres": genre}
+
 
 class TmdbError(Exception):
     """Catalog data could not be fetched. The message is shown to the user."""
@@ -192,8 +208,11 @@ class TmdbClient:
         if kind not in KINDS:
             raise ValueError(f"unknown kind: {kind}")
         body = await self._get(f"/genre/{kind}/list", {"language": _DISPLAY_LANGUAGE})
-        return [Genre(int(g["id"]), GENRE_NAMES.get(int(g["id"])) or to_traditional(str(g.get("name") or "")))
-                for g in body.get("genres") or [] if g.get("id")]
+        genres = [Genre(int(g["id"]), GENRE_NAMES.get(int(g["id"])) or to_traditional(str(g.get("name") or "")))
+                  for g in body.get("genres") or [] if g.get("id")]
+        if kind == "tv":
+            genres += [Genre(-keyword_id, name) for keyword_id, name in TV_KEYWORD_CATEGORIES]
+        return genres
 
     async def available(self, platform: str, kind: str, page: int = 1,
                         genre: int | None = None) -> tuple[list[Title], bool]:
@@ -204,8 +223,7 @@ class TmdbClient:
         params = {
             "with_watch_providers": await self._provider_id(platform), "watch_region": _REGION,
             "with_watch_monetization_types": "flatrate", "sort_by": "popularity.desc", "page": page}
-        if genre:
-            params["with_genres"] = genre
+        params.update(_genre_filter(genre))
         items, total_pages = await self._discover(kind, params)
         return items, page < total_pages
 
@@ -215,7 +233,7 @@ class TmdbClient:
         if not self.configured:
             raise TmdbNotConfigured("尚未設定 TMDB 金鑰")
         start, end = self._window()
-        extra = {"with_genres": genre} if genre else {}
+        extra = _genre_filter(genre)
         if kind == "movie":
             items, _ = await self._discover("movie", {
                 "with_watch_providers": await self._provider_id(platform), "watch_region": _REGION,

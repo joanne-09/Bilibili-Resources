@@ -124,11 +124,13 @@ def test_index_served(fake):
         assert "B站完整美劇" in tc.get("/").text
 
 
-def test_partial_result_is_flagged_and_not_cached():
+def test_partial_result_is_flagged_and_only_briefly_cached():
     hits, details = modern_family()
     client = FakeClient(hits, details, fail_on={2})
     with serve(client) as tc:
         first = lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]
         second = lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]
     assert first["partial"] is True and first["cached"] is False
-    assert second["cached"] is False and second["partial"] is False
+    # an immediate retry must not hammer Bilibili again while it is pushing back
+    assert second["cached"] is True and second["partial"] is True
+    assert len(client.search_calls) == 2

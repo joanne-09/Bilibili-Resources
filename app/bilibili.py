@@ -72,7 +72,7 @@ def _stem(url: str) -> str:
 
 class BiliClient:
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None,
-                 search_interval: float = 3.0, view_interval: float = 0.5,
+                 search_interval: float = 4.0, view_interval: float = 0.5,
                  retry_waits: tuple[float, ...] = (4.0, 10.0)):
         self._http = httpx.AsyncClient(
             transport=transport, timeout=15, follow_redirects=True,

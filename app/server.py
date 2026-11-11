@@ -19,6 +19,7 @@ log = logging.getLogger("bili-finder")
 STATIC = Path(__file__).parent / "static"
 SEARCH_TTL_S = 15 * 60
 LATEST_TTL_S = 30 * 60
+PARTIAL_TTL_S = 3 * 60  # cut-short results: keep briefly so a retry doesn't hammer Bilibili
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
@@ -48,6 +49,7 @@ def create_app(client=None, resolver=None) -> FastAPI:
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
     search_cache, latest_cache = TTLCache(SEARCH_TTL_S), TTLCache(LATEST_TTL_S)
+    partial_cache = TTLCache(PARTIAL_TTL_S)
     busy = asyncio.Lock()  # one pipeline at a time: protects Bilibili's rate budget
 
     def stream(job) -> StreamingResponse:
@@ -91,12 +93,11 @@ def create_app(client=None, resolver=None) -> FastAPI:
             await progress("正在查詢劇名對應…")
             names = await state["resolver"].resolve(query)
             key = "|".join(normalize(n) for n in names)
-            cached = search_cache.get(key)
+            cached = search_cache.get(key) or partial_cache.get(key)
             if cached is not None:
                 return _result(cached, cached=True)
             outcome = await search_series(state["client"], names, progress)
-            if not outcome.partial:  # a cut-short result should be retried, not remembered
-                search_cache.set(key, outcome)
+            (partial_cache if outcome.partial else search_cache).set(key, outcome)
             return _result(outcome, cached=False)
 
         if not query:  # answer without queueing behind a running search
@@ -107,11 +108,13 @@ def create_app(client=None, resolver=None) -> FastAPI:
     @app.get("/api/latest")
     async def api_latest(refresh: int = 0):
         async def job(progress):
-            cached = None if refresh else latest_cache.get("latest")
+            cached = None if refresh else (latest_cache.get("latest") or partial_cache.get("#latest"))
             if cached is not None:
                 return _result(cached, cached=True)
             outcome = await latest(state["client"], progress)
-            if not outcome.partial:
+            if outcome.partial:
+                partial_cache.set("#latest", outcome)
+            else:
                 latest_cache.set("latest", outcome)
             return _result(outcome, cached=False)
 

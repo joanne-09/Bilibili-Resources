@@ -82,7 +82,8 @@ async def search_series(client, names: list[str], progress: Progress) -> Outcome
     # Ordered by how much each tends to find, since a throttle cuts the list short.
     plan = [(f"{primary} 全集", 4), (primary, 4)]
     plan += [(f"{other} 全集", 4) for other in names[1:3]]
-    plan += [(f"{primary} 全集", 3), (f"{primary} 全集", 2), (f"{primary} 未删减", 0)]
+    # The shorter-duration buckets catch one-video-per-episode collections.
+    plan += [(f"{primary} 全集", 3), (f"{primary} 全集", 2)]
 
     out = Outcome(names=list(names))
     candidates = []

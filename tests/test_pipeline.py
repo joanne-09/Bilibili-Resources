@@ -62,8 +62,8 @@ async def test_searches_primary_name_five_ways():
     await search_series(fake, ["绝命毒师"], noop)
     assert fake.search_calls == [
         ("绝命毒师 全集", "click", 4), ("绝命毒师", "click", 4), ("绝命毒师 全集", "click", 3),
-        ("绝命毒师 全集", "click", 2), ("绝命毒师 未删减", "click", 0)]
-    assert fake.patience == [True, False, False, False, False]
+        ("绝命毒师 全集", "click", 2)]
+    assert fake.patience == [True, False, False, False]
 
 
 async def test_groups_and_sorts_by_play():
@@ -99,7 +99,7 @@ async def test_second_name_adds_one_search_and_matches():
                       details={"EN1": detail("EN1", "Breaking Bad 全集 1080P", [300] * 10, play=7)})
     out = await search_series(fake, ["绝命毒师", "Breaking Bad"], noop)
     assert fake.search_calls[2] == ("Breaking Bad 全集", "click", 4)
-    assert len(fake.search_calls) == 6
+    assert len(fake.search_calls) == 5
     assert [i.bvid for i in out.complete] == ["EN1"]
 
 
@@ -150,7 +150,7 @@ async def test_progress_is_reported():
         msgs.append(message)
 
     await search_series(FakeClient(hits, details), ["摩登家庭"], collect)
-    assert msgs[0] == "正在查 B 站（1/5）…"
+    assert msgs[0] == "正在查 B 站（1/4）…"
     assert any(m.startswith("正在確認候選") for m in msgs)
 
 

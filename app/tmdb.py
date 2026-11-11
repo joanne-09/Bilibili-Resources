@@ -186,6 +186,21 @@ class TmdbClient:
                 items.append(_title(raw, "tv", when=when, season=nxt.get("season_number")))
         return sorted(items, key=lambda t: t.date)
 
+    async def find_movie_runtime(self, names: list[str]) -> int | None:
+        """Runtime (minutes) of the film best matching any of the names; None if unknown.
+        Never raises: the runtime only sharpens verdicts."""
+        if not self.configured:
+            return None
+        try:
+            for name in names:
+                body = await self._get("/search/movie", {"query": name, "language": _LANGUAGE, "page": 1})
+                results = body.get("results") or []
+                if results and results[0].get("id"):
+                    return await self.runtime(results[0]["id"])
+        except TmdbError:
+            pass
+        return None
+
     async def runtime(self, movie_id: int) -> int | None:
         body = await self._get(f"/movie/{int(movie_id)}", {"language": _LANGUAGE})
         minutes = body.get("runtime")

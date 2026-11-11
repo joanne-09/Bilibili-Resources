@@ -41,20 +41,25 @@ class AliasResolver:
 
     async def resolve(self, query: str) -> list[str]:
         """Names to search, best (mainland Chinese) first. Always includes the query."""
+        return (await self.resolve_full(query))[0]
+
+    async def resolve_full(self, query: str) -> tuple[list[str], str]:
+        """(names, kind): the names to search and whether the title is a series
+        ("tv") or a film ("movie"). Unknown titles are treated as series."""
         q = " ".join(to_simplified(query).split())
         key = normalize(q)
         cached = self._cache.get(key)
         if cached is not None:
-            return list(cached)
+            return list(cached[0]), cached[1]
 
-        found, ok = await self._douban(q)
+        found, kind, ok = await self._douban(q)
         if not found and not has_cjk(q):
             found, wiki_ok = await self._wikidata(q)
             ok = ok and wiki_ok
         names = _dedupe([*found, q])
         if ok:  # don't let a transient failure stick for a day
-            self._cache.set(key, names)
-        return names
+            self._cache.set(key, (names, kind))
+        return names, kind
 
     async def _json(self, url: str, params: dict, headers: dict):
         try:
@@ -64,26 +69,35 @@ class AliasResolver:
         except (httpx.HTTPError, ValueError):
             return None
 
-    async def _douban(self, q: str) -> tuple[list[str], bool]:
+    async def _douban(self, q: str) -> tuple[list[str], str, bool]:
+        """-> (names, kind, lookup_succeeded)"""
         data = await self._json(
             "https://movie.douban.com/j/subject_suggest", {"q": q},
             {"User-Agent": _UA, "Referer": "https://movie.douban.com/"})
         if not isinstance(data, list):
-            return [], False
+            return [], "tv", False
         want = normalize(q)
+        candidates = []
         for entry in data:
-            if not isinstance(entry, dict) or not entry.get("episode"):
-                continue  # no episode count => a film, not a series
+            if not isinstance(entry, dict):
+                continue
             title = _SEASON_SUFFIX.sub("", str(entry.get("title") or "")).strip()
             english = str(entry.get("sub_title") or "").strip()
             if not title:
                 continue
+            exact = want in (normalize(title), normalize(english))
             # A Latin-script query must literally match; a Chinese query may be a
-            # regional alias Douban knows (六人行 -> 老友记), so trust its top series.
-            if not has_cjk(q) and want not in normalize(title) and want not in normalize(english):
+            # regional alias Douban knows (六人行 -> 老友记), so trust its ranking.
+            if not has_cjk(q) and not exact and want not in normalize(title) and want not in normalize(english):
                 continue
-            return [title, english], True
-        return [], True
+            # An episode count marks a series; films have none.
+            candidates.append((exact, [title, english], "tv" if entry.get("episode") else "movie"))
+        if not candidates:
+            return [], "tv", True
+        # An exact title match beats an earlier loose one ("Breaking Bad" the
+        # series over "El Camino: A Breaking Bad Movie").
+        _, names, kind = next((c for c in candidates if c[0]), candidates[0])
+        return names, kind, True
 
     async def _wikidata(self, q: str) -> tuple[list[str], bool]:
         data = await self._json(

@@ -4,6 +4,8 @@ A film has no episode count to cross-check, so duration is the main evidence:
 compared against the known runtime when we have it, otherwise against what a
 feature film plausibly runs. Recap wording in the title always excludes.
 """
+import re
+
 from app.classifier import _clean, _keyword_reason, _mentions, _quality, _subtitle, _url
 from app.models import ResultItem, SearchHit, VideoDetail
 from app.textnorm import strip_tags
@@ -14,6 +16,9 @@ SERIES_UNIT_S = 70 * 60        # each part this long => a collection of films
 LOW, HIGH = 0.85, 1.15         # acceptable share of the known runtime
 RECAP_SHARE = 0.60             # below this share of the runtime it is a recap/cut
 PLAUSIBLE_MIN_S, PLAUSIBLE_MAX_S = 70 * 60, 240 * 60
+# Wording uploaders put on an actual film. Without a known runtime to compare
+# against, a plausible length alone is not evidence: essays run 90 minutes too.
+_FILM_CLAIM = re.compile(r"正片|完整版|全片|未删减|无删|中字|双字|双语|国语|粤语|蓝光|(?<![a-z])(bd|hd|bluray)(?![a-z])")
 
 
 def prefilter_movie(hit: SearchHit, names: list[str]) -> str | None:
@@ -73,4 +78,6 @@ def classify_movie(detail: VideoDetail, names: list[str], runtime_min: int | Non
         return item("uncertain", "時長偏短，無法確認是正片", *whole)
     if longest > PLAUSIBLE_MAX_S:
         return item("uncertain", "時長異常，無法確認是正片", *whole)
+    if not _FILM_CLAIM.search(text):
+        return item("uncertain", "不知道片長，無法確認是正片", *whole)
     return item("complete", "", *whole)

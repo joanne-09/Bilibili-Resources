@@ -36,7 +36,9 @@ def test_in_between_duration_is_uncertain_with_both_numbers():
 
 
 def test_without_runtime_uses_plausible_film_length():
-    assert classify_movie(detail("沙丘", [110]), DUNE, None).status == "complete"
+    assert classify_movie(detail("沙丘 2021 完整版 中字", [110]), DUNE, None).status == "complete"
+    bare = classify_movie(detail("沙丘", [110]), DUNE, None)
+    assert (bare.status, bare.reason) == ("uncertain", "不知道片長，無法確認是正片")
     short = classify_movie(detail("沙丘", [55]), DUNE, None)
     assert (short.status, short.reason) == ("uncertain", "時長偏短，無法確認是正片")
     long = classify_movie(detail("沙丘", [300]), DUNE, None)
@@ -66,7 +68,8 @@ def test_prefilter_movie():
     assert prefilter_movie(hit("几分钟看完《沙丘》", 90), DUNE) == "解說／速看"
     assert prefilter_movie(hit("星球大战 全集", 120), DUNE) == "與搜尋無關"
     assert prefilter_movie(hit("沙丘 预告", 3), DUNE) == "剪輯／片段"
-    assert prefilter_movie(hit("沙丘 配乐欣赏", 20), DUNE) == "時長過短"
+    assert prefilter_movie(hit("沙丘 配乐欣赏", 20), DUNE) == "原聲／音樂"
+    assert prefilter_movie(hit("沙丘 删减镜头", 20), DUNE) == "時長過短"
     assert prefilter_movie(hit("Dune 2021 中字", 155), DUNE) is None
 
 
@@ -88,3 +91,13 @@ def test_close_reading_videos_are_recaps():      # seen live: 221-minute "逐帧
 def test_game_zone_hits_are_prefiltered():
     h = hit("《乐高蝙蝠侠：黑暗骑士之遗》豪华版", 824, typename="单机游戏")
     assert prefilter_movie(h, BATMAN) == "遊戲影片"
+
+
+def test_essays_soundtracks_and_board_games_are_not_films():     # seen live for "dune"
+    cases = {"万字拆解《沙丘》：结合原著，看懂故事": "解說／速看",
+             "科幻史诗《沙丘》六部曲｜讲了什么故事": "解說／速看",
+             "【电影原声】《沙丘》电影原声 DUNE O.S.T.": "原聲／音樂",
+             "《沙丘:帝国》桌游实战": "遊戲影片"}
+    for title, reason in cases.items():
+        r = classify_movie(detail(title, [84]), DUNE, None)
+        assert (r.status, r.reason) == ("excluded", reason), title

@@ -136,15 +136,11 @@
 
   <section id="search-controls">
     <form id="form">
-      <input type="search" id="q" placeholder="輸入劇名，例如：摩登家庭" autocomplete="off"
+      <input type="search" id="q" placeholder="輸入劇名或片名，例如：摩登家庭" autocomplete="off"
              autocapitalize="off" enterkeyhint="search" aria-label="劇名或片名">
-      <div class="seg tight" id="kind" role="group" aria-label="類型">
-        <button type="button" data-kind="tv">劇</button>
-        <button type="button" data-kind="movie">電影</button>
-      </div>
       <button class="btn" id="go" type="submit">搜尋</button>
     </form>
-    <p class="hint">可輸入英文原名、台灣或大陸譯名，會自動對應。找電影請切到「電影」。</p>
+    <p class="hint">劇或電影都可以搜；可輸入英文原名、台灣或大陸譯名，會自動對應。</p>
   </section>
 
   <section id="catalog-controls" hidden>
@@ -173,7 +169,7 @@
   const TABS = ["search", "latest", "catalog"];
   const kept = { search: null, latest: null };   // last rendered search/latest result
   let tab = "search";
-  let searchKind = "tv";
+  let lastQuery = "";                            // what the current search result was asked for
   let lastSearchUrl = null;                      // for re-polling a result that is being backfilled
   let running = null;                            // AbortController of the active search/latest request
   let pollTimer = null;
@@ -298,6 +294,20 @@
     return note;
   }
 
+  // The server decides whether a title is a series or a film. When it guesses
+  // wrong, this is the way to redo the search under the other set of rules.
+  function kindSwitch(r) {
+    const isMovie = r.kind === "movie";
+    const line = el("div", "status");
+    line.append(el("span", "", isMovie ? "這次當成「電影」來判斷。" : "這次當成「劇集」來判斷。"));
+    const other = el("button", "btn small ghost", isMovie ? "其實是劇集，重搜" : "其實是電影，重搜");
+    other.type = "button";
+    const q = lastQuery;
+    other.addEventListener("click", () => startSearch(q, isMovie ? "tv" : "movie"));
+    line.append(other);
+    return line;
+  }
+
   function showResult(r, which) {
     out.replaceChildren();
     const what = r.kind === "movie" ? "完整正片" : "完整版";
@@ -317,6 +327,7 @@
       status.append(refresh);
     }
     out.append(status);
+    if (which === "search" && lastQuery) out.append(kindSwitch(r));
     if (r.partial) out.append(partialNote(r));
 
     if (r.complete.length) {
@@ -416,17 +427,13 @@
   }
 
   function startSearch(q, kind, extra) {
-    const params = new URLSearchParams({ q, kind });
+    lastQuery = q;
+    const params = new URLSearchParams({ q });
+    if (kind) params.set("kind", kind);          // omitted: the server works it out
     if (extra && extra.alt) params.set("alt", extra.alt);
     if (extra && extra.tmdb_id) params.set("tmdb_id", String(extra.tmdb_id));
     lastSearchUrl = "/api/search?" + params.toString();
     run(lastSearchUrl, "search");
-  }
-
-  function setSearchKind(kind) {
-    searchKind = kind === "movie" ? "movie" : "tv";
-    press($("kind"), "kind", searchKind);
-    input.placeholder = searchKind === "movie" ? "輸入片名，例如：沙丘" : "輸入劇名，例如：摩登家庭";
   }
 
   function loadLatest(refresh) {
@@ -473,7 +480,6 @@
     b.setAttribute("aria-label", `在 B 站找完整版：${t.title || t.original_title}`);
     b.addEventListener("click", () => {
       const name = t.title || t.original_title;
-      setSearchKind(t.kind);
       input.value = name;
       kept.search = null;
       selectTab("search");
@@ -588,7 +594,6 @@
   }
 
   tabs.forEach((t) => t.addEventListener("click", () => selectTab(t.dataset.tab)));
-  $("kind").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => setSearchKind(b.dataset.kind)));
   $("section").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
     cat.section = b.dataset.section; press($("section"), "section", cat.section); loadCatalog(1);
   }));
@@ -598,12 +603,11 @@
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const q = input.value.trim();
-    if (!q) { showError(searchKind === "movie" ? "請輸入片名" : "請輸入劇名"); return; }
+    if (!q) { showError("請輸入劇名或片名"); return; }
     input.blur();
-    startSearch(q, searchKind);
+    startSearch(q);
   });
   window.addEventListener("hashchange", () => selectTab(location.hash.slice(1), true));
-  setSearchKind("tv");
   selectTab(location.hash.slice(1), true);
 })();
 </script>

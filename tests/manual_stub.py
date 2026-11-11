@@ -49,6 +49,9 @@ class StubResolver:
         q = query.strip()
         return [q] if q in ("error", "none") else ["摩登家庭", "Modern Family"]
 
+    async def resolve_full(self, query):
+        return await self.resolve(query), "tv"
+
     async def aclose(self):
         pass
 

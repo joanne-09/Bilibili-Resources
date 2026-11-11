@@ -83,3 +83,35 @@ async def test_second_lookup_is_cached():
 async def test_unrelated_suggestion_for_english_query_is_ignored():
     web = Web(douban=FRIENDS, wikidata={"search": []})
     assert await resolver(web).resolve("tulsa king") == ["tulsa king"]
+
+
+# ---- kind detection (so the search box needs no 劇/電影 switch) --------------
+
+DUNE_FILM = [{"title": "沙丘", "sub_title": "Dune", "type": "movie", "year": "2021", "episode": ""}]
+
+
+async def test_series_is_detected_as_tv():
+    assert await resolver(Web(douban=BB)).resolve_full("breaking bad") == (["绝命毒师", "Breaking Bad"], "tv")
+
+
+async def test_film_is_detected_as_movie_with_both_names():
+    assert await resolver(Web(douban=DUNE_FILM)).resolve_full("dune") == (["沙丘", "Dune"], "movie")
+
+
+async def test_exact_title_match_beats_an_earlier_loose_match():
+    spin_off = [{"title": "绝命毒师：续命之徒", "sub_title": "El Camino: A Breaking Bad Movie", "episode": ""}]
+    names, kind = await resolver(Web(douban=spin_off + BB)).resolve_full("breaking bad")
+    assert (names[0], kind) == ("绝命毒师", "tv")
+
+
+async def test_unknown_title_defaults_to_tv():
+    web = Web(douban=[], wikidata={"search": []})
+    assert await resolver(web).resolve_full("zzz qqq") == (["zzz qqq"], "tv")
+
+
+async def test_kind_is_cached_with_the_names():
+    web = Web(douban=DUNE_FILM)
+    r = resolver(web)
+    await r.resolve_full("Dune")
+    n = len(web.calls)
+    assert await r.resolve_full("dune") == (["沙丘", "Dune"], "movie") and len(web.calls) == n

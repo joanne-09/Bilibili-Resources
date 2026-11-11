@@ -17,6 +17,9 @@ class FakeResolver:
         q = to_simplified(query.strip())
         return list(self.mapping.get(q.lower(), [q]))
 
+    async def resolve_full(self, query):
+        return await self.resolve(query), "tv"
+
     async def aclose(self):
         pass
 
@@ -160,6 +163,9 @@ class FakeTmdb:
             raise self.error
         return [Title(5, kind, "镀金时代", "The Gilded Age", "2022", "2026-11-15", "", season=4)]
 
+    async def find_movie_runtime(self, names):
+        return None
+
     async def runtime(self, movie_id):
         self.calls.append(("runtime", movie_id))
         if self.error:
@@ -294,3 +300,49 @@ def test_search_and_latest_work_without_tmdb_config(fake):
     with serve2(fake, FakeTmdb(configured=False)) as tc:
         assert lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]["type"] == "result"
         assert lines(tc.get("/api/latest"))[-1]["type"] == "result"
+
+
+# ---- automatic series/film detection ---------------------------------------
+
+class KindResolver(FakeResolver):
+    """Says every title is a film unless told otherwise."""
+
+    def __init__(self, kind="movie"):
+        super().__init__()
+        self.kind = kind
+
+    async def resolve_full(self, query):
+        return await self.resolve(query), self.kind
+
+
+def test_search_without_kind_uses_the_detected_kind():
+    hits, details = dune()
+    with serve2(FakeClient(hits, details), resolver=KindResolver("movie")) as tc:
+        out = lines(tc.get("/api/search", params={"q": "沙丘"}))[-1]
+    assert out["kind"] == "movie" and [i["bvid"] for i in out["complete"]] == ["F1"]
+
+
+def test_explicit_kind_overrides_detection(fake):
+    with serve2(fake, resolver=KindResolver("movie")) as tc:
+        out = lines(tc.get("/api/search", params={"q": "摩登家庭", "kind": "tv"}))[-1]
+    assert out["kind"] == "tv" and [i["bvid"] for i in out["complete"]] == ["B", "A"]
+
+
+def test_detected_series_is_searched_as_tv(fake):
+    with serve2(fake) as tc:
+        assert lines(tc.get("/api/search", params={"q": "摩登家庭"}))[-1]["kind"] == "tv"
+
+
+def test_detected_film_gets_its_runtime_looked_up_by_name():
+    hits, details = dune()
+
+    class Tmdb(FakeTmdb):
+        async def find_movie_runtime(self, names):
+            self.calls.append(("find", tuple(names)))
+            return 155
+
+    tmdb = Tmdb()
+    with serve2(FakeClient(hits, details), tmdb, resolver=KindResolver("movie")) as tc:
+        out = lines(tc.get("/api/search", params={"q": "沙丘"}))[-1]
+    assert ("find", ("沙丘",)) in tmdb.calls and out["runtime"] == 155
+    assert "F3" in [i["bvid"] for i in out["excluded"]]

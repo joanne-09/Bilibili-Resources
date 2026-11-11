@@ -181,3 +181,20 @@ async def test_unknown_platform_or_kind_is_a_value_error():
         await c.available("hulu", "tv")
     with pytest.raises(ValueError):
         await c.available("netflix", "anime")
+
+
+async def test_find_movie_runtime_searches_by_name_then_reads_runtime():
+    api = Api({"/search/movie": {"results": [{"id": 438631, "title": "沙丘"}]}, "/movie/438631": {"runtime": 155}})
+    assert await client(api).find_movie_runtime(["沙丘", "Dune"]) == 155
+    assert api.last("/search/movie").url.params["query"] == "沙丘"
+
+
+async def test_find_movie_runtime_tries_the_next_name_and_gives_none_when_unknown():
+    api = Api({"/search/movie": {"results": []}})
+    assert await client(api).find_movie_runtime(["沙丘", "Dune"]) is None
+    assert len([r for r in api.requests if r.url.path.endswith("/search/movie")]) == 2
+
+
+async def test_find_movie_runtime_is_none_when_not_configured_or_failing():
+    assert await client(Api(), key=None).find_movie_runtime(["沙丘"]) is None
+    assert await client(Api(status=500)).find_movie_runtime(["沙丘"]) is None

@@ -131,20 +131,24 @@ def create_app(client=None, resolver=None, tmdb=None, backfill_interval: float |
         return StreamingResponse(events(), media_type=_NDJSON, headers=_NO_STORE)
 
     @app.get("/api/search")
-    async def api_search(q: str = "", kind: str = "tv", alt: str = "", tmdb_id: int | None = None):
+    async def api_search(q: str = "", kind: str = "auto", alt: str = "", tmdb_id: int | None = None):
+        """kind: "tv" | "movie", or "auto" to let the title lookup decide."""
         query = " ".join(q.split())
         if not query:  # answer without queueing behind a running search
             return _one({"type": "error", "message": "請輸入劇名"})
-        if kind not in KINDS:
+        if kind not in (*KINDS, "auto"):
             return _one({"type": "error", "message": "參數錯誤"})
+        requested = kind
 
         async def job(progress):
+            detected = "tv"
             if alt.strip():
                 # Launched from the catalog: both names are already known.
                 names = _dedupe([to_simplified(query), alt.strip()])
             else:
                 await progress("正在查詢劇名對應…")
-                names = await state["resolver"].resolve(query)
+                names, detected = await state["resolver"].resolve_full(query)
+            kind = detected if requested == "auto" else requested
             key = kind + ":" + "|".join(normalize(n) for n in names)
 
             cached = search_cache.get(key)
@@ -159,6 +163,9 @@ def create_app(client=None, resolver=None, tmdb=None, backfill_interval: float |
             if kind == "movie" and tmdb_id is not None and tmdb.configured:
                 with suppress(TmdbError):  # runtime only sharpens the verdicts
                     runtime = await tmdb.runtime(tmdb_id)
+
+            if kind == "movie" and runtime is None:
+                runtime = await tmdb.find_movie_runtime(names)
 
             outcome = await search_series(state["client"], names, progress, kind=kind, runtime=runtime)
             if outcome.skipped:

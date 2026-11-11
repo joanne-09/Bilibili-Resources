@@ -138,3 +138,21 @@ async def test_html_entities_in_titles_are_decoded():
     body = {"code": 0, "data": {"numResults": 1, "result": [
         {"bvid": "BV2", "title": "柳镇&amp;李 <em class=\"keyword\">全集</em>", "duration": "1:0"}]}}
     assert (await make(Site(search=[body])).search("x"))[0].title == "柳镇&李 全集"
+
+
+async def test_signature_matches_the_query_string_actually_sent():
+    """Bilibili verifies w_rid against the raw query; a keyword with a space
+    must be encoded identically when signing and when sending."""
+    seen = []
+
+    def handler(request):
+        if request.url.path.endswith("/search/type"):
+            seen.append(request.url.query.decode())
+        return Site()(request)
+
+    client = BiliClient(transport=httpx.MockTransport(handler), search_interval=0, view_interval=0,
+                        retry_waits=())
+    await client.search("绝命毒师 全集 (4K)", duration=4)
+    signed_part, _, w_rid = seen[0].rpartition("&w_rid=")
+    key = "ee1db124af3c7062474693fa704f4ff8"
+    assert hashlib.md5((signed_part + key).encode()).hexdigest() == w_rid

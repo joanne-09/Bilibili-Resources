@@ -46,6 +46,18 @@ def sign(params: dict, key: str, wts: int) -> dict:
     return signed
 
 
+def signed_query(params: dict, key: str, wts: int) -> str:
+    """The exact query string to put on the wire.
+
+    Bilibili checks w_rid against the raw query, so the request must carry the
+    very bytes that were hashed; letting the HTTP library re-encode the params
+    (space as %20 instead of +) silently invalidates the signature.
+    """
+    signed = sign(params, key, wts)
+    w_rid = signed.pop("w_rid")
+    return urllib.parse.urlencode(sorted(signed.items())) + "&w_rid=" + w_rid
+
+
 def _https(url: str) -> str:
     if url.startswith("//"):
         return "https:" + url
@@ -109,7 +121,7 @@ class BiliClient:
             self._key_at = time.monotonic()
             return self._key
 
-    async def _paced(self, kind: str, url: str, params: dict) -> dict:
+    async def _paced(self, kind: str, url: str, params: dict | None = None) -> dict:
         """One request of `kind`, started no sooner than its interval after the last one."""
         async with self._locks[kind]:
             wait = self._last[kind] + self._intervals[kind] - time.monotonic()
@@ -133,8 +145,8 @@ class BiliClient:
         for wait in (None, *(self._retry_waits if patient else ())):
             if wait is not None:
                 await asyncio.sleep(wait)
-            body = await self._paced("search", f"{_API}/x/web-interface/wbi/search/type",
-                                     sign(base, key, int(time.time())))
+            query = signed_query(base, key, int(time.time()))
+            body = await self._paced("search", f"{_API}/x/web-interface/wbi/search/type?{query}")
             if body.get("code") != 0:
                 raise BiliError(f"B 站查詢失敗（代碼 {body.get('code')}）")
             data = body.get("data") or {}

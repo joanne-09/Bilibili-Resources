@@ -180,3 +180,68 @@ async def test_detail_lookup_failing_midway_keeps_results_and_marks_partial():
     out = await search_series(fake, ["摩登家庭"], noop)
     assert [i.bvid for i in out.complete] == ["B"]
     assert out.partial is True and len(fake.view_calls) == 2
+
+
+# ---- movie mode, skipped-query bookkeeping ---------------------------------
+
+from app.pipeline import bilibili_search_url, extend_outcome  # noqa: E402
+
+
+def dune():
+    hits = [hit("F1", "沙丘 2021 4K 中英双字", minutes=155, play=50),
+            hit("F2", "《沙丘》电影解说 完整版", minutes=150, play=900),
+            hit("F3", "沙丘 完整版", minutes=62, play=70)]
+    details = {"F1": detail("F1", "沙丘 2021 4K 中英双字", [155], play=50),
+               "F3": detail("F3", "沙丘 完整版", [62], play=70)}
+    return hits, details
+
+
+async def test_movie_plan_order():
+    fake = FakeClient()
+    await search_series(fake, ["沙丘", "Dune"], noop, kind="movie")
+    assert fake.search_calls == [("沙丘", "click", 4), ("Dune", "click", 4), ("沙丘 完整版", "click", 4)]
+
+
+async def test_movie_mode_uses_runtime_and_drops_recaps():
+    hits, details = dune()
+    out = await search_series(FakeClient(hits, details), ["沙丘", "Dune"], noop, kind="movie", runtime=155)
+    assert [i.bvid for i in out.complete] == ["F1"]
+    assert {i.bvid: i.reason for i in out.excluded} == {"F2": "解說／速看", "F3": "時長遠短於片長（可能是解說）"}
+    assert (out.kind, out.runtime) == ("movie", 155)
+
+
+async def test_series_mode_is_the_default_and_unchanged():
+    hits, details = modern_family()
+    out = await search_series(FakeClient(hits, details), ["摩登家庭"], noop)
+    assert out.kind == "tv" and [i.bvid for i in out.complete] == ["B", "A"]
+
+
+async def test_skipped_lists_the_refused_and_remaining_searches():
+    hits, details = modern_family()
+    out = await search_series(FakeClient(hits, details, fail_on={2}), ["摩登家庭"], noop)
+    assert out.skipped == [("摩登家庭 全集", 4), ("摩登家庭 全集", 3), ("摩登家庭 全集", 2)]
+    assert out.partial is True
+
+
+async def test_nothing_skipped_when_bilibili_answers_everything():
+    hits, details = modern_family()
+    assert (await search_series(FakeClient(hits, details), ["摩登家庭"], noop)).skipped == []
+
+
+async def test_extend_outcome_adds_only_unseen_results_in_play_order():
+    hits, details = modern_family()
+    fake = FakeClient(hits, details)
+    out = await search_series(fake, ["摩登家庭"], noop)
+    views_before = len(fake.view_calls)
+    fake.details["N"] = detail("N", "摩登家庭 全11季 蓝光 未删减", [380] * 20, play=50)
+    new_hits = [hit("N", "摩登家庭 全11季 蓝光 未删减", play=50), hits[0], hit("X", "一口气看完摩登家庭", play=1)]
+    await extend_outcome(fake, out, new_hits, noop, limit=10)
+    assert [i.bvid for i in out.complete] == ["B", "N", "A"]
+    assert fake.view_calls[views_before:] == ["N"]          # A was already known
+    assert "X" in [i.bvid for i in out.excluded]
+
+
+def test_bilibili_search_url_encodes_keyword():
+    url = bilibili_search_url("绝命毒师 全集", 4)
+    assert url == ("https://search.bilibili.com/all?keyword=%E7%BB%9D%E5%91%BD%E6%AF%92%E5%B8%88%20%E5%85%A8%E9%9B%86"
+                   "&order=click&duration=4")

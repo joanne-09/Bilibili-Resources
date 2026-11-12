@@ -10,12 +10,17 @@
 
 ## 怎麼用
 
-1. 在電腦上雙擊 `start.bat`。
-   - 第一次執行時 Windows 防火牆會問要不要允許，請勾選「私人網路」並允許，否則 iPad 連不上。
-2. 黑色視窗會顯示一個網址，例如 `http://192.168.1.23:8756`。
+Windows、macOS、Linux 都可以用。需要先安裝 [uv](https://docs.astral.sh/uv/getting-started/installation/)（它會自動準備 Python 和需要的套件）。
+
+1. 在電腦上啟動：
+   - **Windows**：雙擊 `start.bat`。第一次執行時 Windows 防火牆會問要不要允許，請勾選「私人網路」並允許，否則 iPad 連不上。
+   - **macOS**：雙擊 `start.command`（第一次若被擋，按右鍵 →「打開」）。若系統問是否允許接受傳入連線，請允許。
+   - **Linux**：在終端機執行 `./start.sh`。若有開防火牆，要放行 TCP 8756 埠（例如 `sudo ufw allow 8756/tcp`）。
+   - macOS／Linux 若出現「permission denied」，先執行一次 `chmod +x start.sh start.command`。
+2. 視窗會顯示一個網址，例如 `http://192.168.1.23:8756`。
 3. 在 iPad 的 Safari 輸入那個網址（iPad 要和電腦在同一個 Wi-Fi）。
    - 想要像 App 一樣：Safari 的分享按鈕 →「加入主畫面」。
-4. 不用時關掉黑色視窗即可。
+4. 不用時關掉那個視窗即可（或按 Ctrl+C）。
 
 劇名可以打英文原名、台灣譯名或大陸譯名，工具會自動對應成 B 站上用的名字，並在結果上方顯示「同時搜尋：…」讓你確認有沒有對應錯。
 
@@ -29,7 +34,7 @@
    申請表的 Application URL 填 `http://localhost` 即可，類型選個人。
 2. 把專案資料夾裡的 `config.example.toml` 複製一份，改名為 `config.local.toml`，把金鑰貼進引號裡存檔。
    「API Key」或「API Read Access Token」都可以。這個檔案不會進 git。
-3. 重新執行 `start.bat`。
+3. 重新啟動（`start.bat`／`start.command`／`start.sh`）。
 
 沒設定金鑰也沒關係，「搜尋」和「最新上線」照常可用。
 

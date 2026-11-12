@@ -1,0 +1,5 @@
+# Shell launchers must keep LF line endings or they will not run on macOS/Linux.
+*.sh      text eol=lf
+*.command text eol=lf
+# Windows batch files need CRLF.
+*.bat     text eol=crlf

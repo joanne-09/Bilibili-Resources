@@ -505,7 +505,8 @@
     s2.append("在這台電腦的專案資料夾裡，把 ", el("code", "", "config.example.toml"), " 複製一份並改名為 ",
       el("code", "", "config.local.toml"), "，把金鑰貼進引號裡存檔。");
     const s3 = el("li");
-    s3.append("關掉再重新執行 ", el("code", "", "start.bat"), "。");
+    s3.append("關掉再重新啟動本工具（", el("code", "", "start.bat"), "、",
+      el("code", "", "start.command"), " 或 ", el("code", "", "start.sh"), "）。");
     ol.append(s1, s2, s3);
     box.append(ol, el("p", "hint", "沒有設定也沒關係，「搜尋」和「最新上線」照常可用。"));
     return box;

@@ -5,7 +5,7 @@
 #   1. 到 https://www.themoviedb.org 註冊並登入
 #   2. 右上角頭像 → 設定 (Settings) → API → 申請一組 API 金鑰（用途選個人）
 #   3. 把「API 金鑰」(API Key) 或「API 讀取存取權杖」(Read Access Token) 貼到下面的引號裡
-#   4. 重新啟動 start.bat
+#   4. 重新啟動（Windows: start.bat／macOS: start.command／Linux: start.sh）
 
 [tmdb]
 api_key = ""

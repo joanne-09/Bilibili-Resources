@@ -16,7 +16,7 @@ from app.cache import TTLCache
 from app.config import load_config
 from app.pipeline import Outcome, bilibili_search_url, latest, search_series
 from app.textnorm import normalize, to_simplified
-from app.tmdb import KINDS, PLATFORMS, TmdbClient, TmdbError
+from app.tmdb import KINDS, ORIGINS, PLATFORMS, TmdbClient, TmdbError
 
 log = logging.getLogger("bili-finder")
 STATIC = Path(__file__).parent / "static"
@@ -195,22 +195,30 @@ def create_app(client=None, resolver=None, tmdb=None, backfill_interval: float |
 
     @app.get("/api/catalog")
     async def api_catalog(platform: str = "", section: str = "", kind: str = "", page: int = 1,
-                          genre: int | None = None):
+                          genre: int | None = None, origin: str = ""):
         if (platform not in PLATFORMS or kind not in KINDS
-                or section not in ("available", "upcoming") or not 1 <= page <= 500):
+                or section not in ("available", "upcoming") or not 1 <= page <= 500
+                or (origin and origin not in {o.code for o in ORIGINS})):
             return JSONResponse({"error": "參數錯誤"}, status_code=400, headers=_NO_STORE)
         tmdb = state["tmdb"]
         if not tmdb.configured:
             return JSONResponse({"configured": False, "items": [], "has_more": False}, headers=_NO_STORE)
         try:
             if section == "available":
-                items, has_more = await tmdb.available(platform, kind, page, genre=genre)
+                items, has_more = await tmdb.available(platform, kind, page, genre=genre,
+                                                       origin=origin or None)
             else:
-                items, has_more = await tmdb.upcoming(platform, kind, genre=genre), False
+                items, has_more = await tmdb.upcoming(platform, kind, genre=genre,
+                                                      origin=origin or None), False
         except TmdbError as exc:
             return JSONResponse({"error": str(exc)}, status_code=502, headers=_NO_STORE)
         return JSONResponse({"configured": True, "items": [dataclasses.asdict(t) for t in items],
                              "has_more": has_more}, headers=_NO_STORE)
+
+    @app.get("/api/origins")
+    async def api_origins():
+        """Production regions for the catalog's region filter (美劇 / 韓劇 / 陸劇 ...)."""
+        return [dataclasses.asdict(o) for o in ORIGINS]
 
     @app.get("/api/genres")
     async def api_genres(kind: str = ""):

@@ -149,7 +149,7 @@ class FakeTmdb:
     def __init__(self, configured=True, error=None, runtime=155):
         self.configured, self.error, self._runtime, self.calls = configured, error, runtime, []
 
-    async def available(self, platform, kind, page=1, genre=None):
+    async def available(self, platform, kind, page=1, genre=None, origin=None):
         self.calls.append(("available", platform, kind, page))
         if self.error:
             raise self.error
@@ -157,7 +157,7 @@ class FakeTmdb:
             raise ValueError("bad")
         return [Title(1396, kind, "绝命毒师", "Breaking Bad", "2008", "2008-01-20", "https://img/p.jpg")], True
 
-    async def upcoming(self, platform, kind, genre=None):
+    async def upcoming(self, platform, kind, genre=None, origin=None):
         self.calls.append(("upcoming", platform, kind))
         if self.error:
             raise self.error
@@ -360,7 +360,7 @@ class GenreTmdb(FakeTmdb):
             raise self.error
         return [Genre(18, "劇情"), Genre(35, "喜劇")]
 
-    async def available(self, platform, kind, page=1, genre=None):
+    async def available(self, platform, kind, page=1, genre=None, origin=None):
         self.calls.append(("available", platform, kind, page, genre))
         return [Title(1668, kind, "老友记", "Friends", "1994", "1994-09-22", "", display_title="六人行")], False
 
@@ -383,3 +383,32 @@ def test_catalog_passes_genre_and_returns_display_title(fake):
     assert ("available", "hbo", "tv", 1, 35) in tmdb.calls
     assert (body["items"][0]["display_title"], body["items"][0]["title"]) == ("六人行", "老友记")
     assert bad.status_code in (400, 422)
+
+
+# ---- origin filter ------------------------------------------------------------
+
+class OriginTmdb(FakeTmdb):
+    async def available(self, platform, kind, page=1, genre=None, origin=None):
+        self.calls.append(("available", platform, kind, page, genre, origin))
+        return [], False
+
+    async def upcoming(self, platform, kind, genre=None, origin=None):
+        self.calls.append(("upcoming", platform, kind, genre, origin))
+        return []
+
+
+def test_origins_endpoint_lists_regions(fake):
+    with serve2(fake) as tc:
+        origins = tc.get("/api/origins").json()
+    assert {"code": "US", "name": "美國"} in origins and {"code": "KR", "name": "韓國"} in origins
+
+
+def test_catalog_passes_origin_alongside_genre(fake):
+    tmdb = OriginTmdb()
+    with serve2(fake, tmdb) as tc:
+        tc.get("/api/catalog", params={"platform": "netflix", "section": "available", "kind": "tv", "genre": 18, "origin": "KR"})
+        tc.get("/api/catalog", params={"platform": "netflix", "section": "upcoming", "kind": "tv", "origin": "CN"})
+        bad = tc.get("/api/catalog", params={"platform": "netflix", "section": "available", "kind": "tv", "origin": "XX"})
+    assert ("available", "netflix", "tv", 1, 18, "KR") in tmdb.calls
+    assert ("upcoming", "netflix", "tv", None, "CN") in tmdb.calls
+    assert bad.status_code == 400 and bad.json() == {"error": "參數錯誤"}

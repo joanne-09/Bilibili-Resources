@@ -300,3 +300,33 @@ async def test_negative_genre_filters_by_keyword_instead_of_genre():
     assert p["with_keywords"] == "9840" and "with_genres" not in p
     await c.upcoming("netflix", "tv", genre=-9840)
     assert api.last("/discover/tv").url.params["with_keywords"] == "9840"
+
+
+# ---- origin filter (美劇 / 韓劇 / 陸劇 ...), independent of genre -------------
+
+from app.tmdb import ORIGINS  # noqa: E402
+
+
+def test_origins_cover_the_common_drama_sources():
+    codes = {o.code: o.name for o in ORIGINS}
+    assert {"US": "美國", "KR": "韓國", "CN": "中國大陸", "JP": "日本", "GB": "英國", "TW": "台灣"}.items() <= codes.items()
+
+
+async def test_origin_is_sent_as_origin_country_and_combines_with_genre():
+    api = Api({"/discover/tv": {"page": 1, "total_pages": 1, "results": []},
+               "/discover/movie": {"page": 1, "total_pages": 1, "results": []}})
+    c = client(api)
+    await c.available("netflix", "tv", genre=18, origin="KR")
+    p = api.last("/discover/tv").url.params
+    assert (p["with_origin_country"], p["with_genres"]) == ("KR", "18")
+    await c.upcoming("netflix", "tv", origin="KR")
+    assert api.last("/discover/tv").url.params["with_origin_country"] == "KR"
+    await c.upcoming("netflix", "movie", origin="CN")
+    assert api.last("/discover/movie").url.params["with_origin_country"] == "CN"
+    await c.available("netflix", "movie")
+    assert "with_origin_country" not in api.last("/discover/movie").url.params
+
+
+async def test_unknown_origin_is_a_value_error():
+    with pytest.raises(ValueError):
+        await client(Api()).available("netflix", "tv", origin="XX")

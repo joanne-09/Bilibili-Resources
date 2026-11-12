@@ -45,6 +45,32 @@ TV_KEYWORD_CATEGORIES = [
 ]
 
 
+@dataclass
+class Origin:
+    code: str  # ISO 3166-1 country code, as TMDB's with_origin_country expects
+    name: str
+
+
+# Where a title was produced ("美劇", "韓劇", "陸劇" ...). A separate axis from
+# genre: the two filters combine.
+ORIGINS = [
+    Origin("US", "美國"), Origin("GB", "英國"), Origin("KR", "韓國"), Origin("JP", "日本"),
+    Origin("CN", "中國大陸"), Origin("TW", "台灣"), Origin("HK", "香港"), Origin("TH", "泰國"),
+    Origin("IN", "印度"), Origin("ES", "西班牙"), Origin("FR", "法國"), Origin("DE", "德國"),
+    Origin("IT", "義大利"), Origin("MX", "墨西哥"), Origin("BR", "巴西"), Origin("TR", "土耳其"),
+    Origin("CA", "加拿大"), Origin("AU", "澳洲"),
+]
+_ORIGIN_CODES = {o.code for o in ORIGINS}
+
+
+def _origin_filter(origin: str | None) -> dict:
+    if not origin:
+        return {}
+    if origin not in _ORIGIN_CODES:
+        raise ValueError(f"unknown origin: {origin}")
+    return {"with_origin_country": origin}
+
+
 def _genre_filter(genre: int | None) -> dict:
     """Discover parameters for a genre id (positive) or keyword category (negative)."""
     if not genre:
@@ -214,26 +240,29 @@ class TmdbClient:
             genres += [Genre(-keyword_id, name) for keyword_id, name in TV_KEYWORD_CATEGORIES]
         return genres
 
-    async def available(self, platform: str, kind: str, page: int = 1,
-                        genre: int | None = None) -> tuple[list[Title], bool]:
+    async def available(self, platform: str, kind: str, page: int = 1, genre: int | None = None,
+                        origin: str | None = None) -> tuple[list[Title], bool]:
         """Most popular titles currently streaming on the platform. -> (items, has_more)"""
         self._check(platform, kind)
+        origin_params = _origin_filter(origin)
         if not self.configured:
             raise TmdbNotConfigured("尚未設定 TMDB 金鑰")
         params = {
             "with_watch_providers": await self._provider_id(platform), "watch_region": _REGION,
             "with_watch_monetization_types": "flatrate", "sort_by": "popularity.desc", "page": page}
         params.update(_genre_filter(genre))
+        params.update(origin_params)
         items, total_pages = await self._discover(kind, params)
         return items, page < total_pages
 
-    async def upcoming(self, platform: str, kind: str, genre: int | None = None) -> list[Title]:
+    async def upcoming(self, platform: str, kind: str, genre: int | None = None,
+                       origin: str | None = None) -> list[Title]:
         """Platform originals premiering in the next UPCOMING_DAYS days, soonest first."""
         spec = self._check(platform, kind)
         if not self.configured:
             raise TmdbNotConfigured("尚未設定 TMDB 金鑰")
         start, end = self._window()
-        extra = _genre_filter(genre)
+        extra = {**_genre_filter(genre), **_origin_filter(origin)}
         if kind == "movie":
             items, _ = await self._discover("movie", {
                 "with_watch_providers": await self._provider_id(platform), "watch_region": _REGION,

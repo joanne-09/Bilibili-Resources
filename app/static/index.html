@@ -118,6 +118,7 @@
   }
   .tile .meta { padding: 8px 10px 10px; }
   .tile .t1 { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+  .tile .badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .tile .t2 { color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
   .more { display: flex; justify-content: center; margin-top: 18px; }
   .steps { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px 16px 38px; margin: 12px 0; }
@@ -149,6 +150,13 @@
   </section>
 
   <section id="catalog-controls" hidden>
+    <form id="cform" class="bar">
+      <input type="search" id="cq" placeholder="找某一部劇或電影，例如：六人行" autocomplete="off"
+             autocapitalize="off" enterkeyhint="search" aria-label="在片單中搜尋片名">
+      <button class="btn" type="submit">搜尋</button>
+      <button class="btn ghost" type="button" id="cclear" hidden>清除</button>
+    </form>
+    <div id="cfilters">
     <div class="bar"><div class="seg" id="platforms" role="group" aria-label="平台"></div></div>
     <div class="bar">
       <div class="seg tight" id="section" role="group" aria-label="範圍">
@@ -161,6 +169,7 @@
       </div>
       <select id="origin" aria-label="地區篩選"><option value="">全部地區</option></select>
       <select id="genre" aria-label="類型篩選"><option value="">全部類型</option></select>
+    </div>
     </div>
   </section>
 
@@ -180,7 +189,7 @@
   let lastSearchUrl = null;                      // for re-polling a result that is being backfilled
   let running = null;                            // AbortController of the active search/latest request
   let pollTimer = null;
-  const cat = { platform: null, section: "available", kind: "tv", origin: "", genre: "", genresFor: null, page: 1, items: [], hasMore: false, token: 0 };
+  const cat = { platform: null, section: "available", kind: "tv", origin: "", genre: "", genresFor: null, query: "", labels: {}, page: 1, items: [], hasMore: false, token: 0 };
 
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -472,7 +481,8 @@
     } else {
       poster.append(el("div", "ph", shown));
     }
-    if (cat.section === "upcoming" && t.date) {
+    const upcoming = cat.section === "upcoming" && !cat.query;
+    if (upcoming && t.date) {
       const [, m, d] = t.date.split("-").map(Number);
       const n = daysUntil(t.date);
       const rel = n <= 0 ? "今天" : `還有 ${n} 天`;
@@ -482,9 +492,18 @@
     meta.append(el("div", "t1", shown));
     const sub = [];
     if (t.original_title && t.original_title !== shown) sub.push(t.original_title);
-    if (cat.section === "upcoming" && t.season && t.season > 1) sub.push(`第 ${t.season} 季`);
+    if (upcoming && t.season && t.season > 1) sub.push(`第 ${t.season} 季`);
     else if (t.year) sub.push(t.year);
     if (sub.length) meta.append(el("div", "t2", sub.join(" · ")));
+    if (cat.query) {
+      // Search covers everything on TMDB, so say what it is and where it streams.
+      const badges = el("div", "badges");
+      badges.append(el("span", "chip", t.kind === "movie" ? "電影" : "劇"));
+      const on = (t.platforms || []).map((id) => cat.labels[id] || id);
+      if (on.length) on.forEach((label) => badges.append(el("span", "chip ok", label)));
+      else badges.append(el("span", "chip", "三個平台都沒有"));
+      meta.append(badges);
+    }
     b.append(poster, meta);
     b.setAttribute("aria-label", `在 B 站找完整版：${shown}`);
     b.addEventListener("click", () => {
@@ -515,13 +534,15 @@
 
   function renderCatalog() {
     out.replaceChildren();
-    if (cat.section === "upcoming") {
+    if (cat.query) {
+      out.append(el("p", "hint", `「${cat.query}」的搜尋結果，不限平台、不套用上面的篩選；綠色標籤是美國區有上架的平台。點一下就去 B 站找完整版。`));
+    } else if (cat.section === "upcoming") {
       out.append(el("p", "hint", "只包含該平台原創作品的首播／新一季日期（美國區、未來 90 天），不含授權片的上架預告。"));
     } else {
       out.append(el("p", "hint", "美國區、按熱門度排序。點一下就去 B 站找完整版。"));
     }
     if (!cat.items.length) {
-      out.append(el("p", "empty", (cat.genre || cat.origin) ? "這個篩選條件沒有查到內容，換一個地區或類型試試。" : cat.section === "upcoming"
+      out.append(el("p", "empty", cat.query ? "找不到這個名字的劇或電影，換個寫法或用英文原名試試。" : (cat.genre || cat.origin) ? "這個篩選條件沒有查到內容，換一個地區或類型試試。" : cat.section === "upcoming"
         ? (cat.kind === "movie" ? "這個平台近 90 天的電影上線預告資料不足。" : "這個平台近 90 天沒有查到上線預告。")
         : "沒有查到內容。"));
       return;
@@ -543,11 +564,17 @@
     const token = ++cat.token;
     const first = page === 1;
     if (first) { cat.items = []; showProgress("正在載入片單…"); }
-    const params = new URLSearchParams({ platform: cat.platform, section: cat.section, kind: cat.kind, page: String(page) });
-    if (cat.genre) params.set("genre", cat.genre);
-    if (cat.origin) params.set("origin", cat.origin);
+    let url;
+    if (cat.query) {
+      url = "/api/catalog/search?" + new URLSearchParams({ q: cat.query, page: String(page) }).toString();
+    } else {
+      const params = new URLSearchParams({ platform: cat.platform, section: cat.section, kind: cat.kind, page: String(page) });
+      if (cat.genre) params.set("genre", cat.genre);
+      if (cat.origin) params.set("origin", cat.origin);
+      url = "/api/catalog?" + params.toString();
+    }
     try {
-      const resp = await fetch("/api/catalog?" + params.toString(), { cache: "no-store" });
+      const resp = await fetch(url, { cache: "no-store" });
       const body = await resp.json();
       if (token !== cat.token || tab !== "catalog") return;
       if (!resp.ok) { showError(body.error || "無法取得片單資料"); return; }
@@ -615,6 +642,7 @@
       try {
         const platforms = await (await fetch("/api/platforms", { cache: "no-store" })).json();
         platforms.forEach((p) => {
+          cat.labels[p.id] = p.label;
           const b = el("button", "", p.label);
           b.type = "button";
           b.dataset.platform = p.id;
@@ -662,6 +690,23 @@
   }));
   $("genre").addEventListener("change", (e) => { cat.genre = e.target.value; loadCatalog(1); });
   $("origin").addEventListener("change", (e) => { cat.origin = e.target.value; loadCatalog(1); });
+
+  // Title search inside the catalog: replaces the browsing filters until cleared.
+  function setCatalogQuery(q) {
+    cat.query = q;
+    $("cq").value = q;
+    $("cfilters").hidden = Boolean(q);
+    $("cclear").hidden = !q;
+    loadCatalog(1);
+  }
+  $("cform").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = $("cq").value.trim();
+    if (q === cat.query) return;
+    $("cq").blur();
+    setCatalogQuery(q);
+  });
+  $("cclear").addEventListener("click", () => setCatalogQuery(""));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const q = input.value.trim();

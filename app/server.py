@@ -215,6 +215,23 @@ def create_app(client=None, resolver=None, tmdb=None, backfill_interval: float |
         return JSONResponse({"configured": True, "items": [dataclasses.asdict(t) for t in items],
                              "has_more": has_more}, headers=_NO_STORE)
 
+    @app.get("/api/catalog/search")
+    async def api_catalog_search(q: str = "", page: int = 1):
+        """Find a series or film by name; each result says which platforms stream it."""
+        query = " ".join(q.split())
+        if not query or not 1 <= page <= 500:
+            return JSONResponse({"error": "請輸入片名" if not query else "參數錯誤"},
+                                status_code=400, headers=_NO_STORE)
+        tmdb = state["tmdb"]
+        if not tmdb.configured:
+            return JSONResponse({"configured": False, "items": [], "has_more": False}, headers=_NO_STORE)
+        try:
+            items, has_more = await tmdb.search(query, page)
+        except TmdbError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=502, headers=_NO_STORE)
+        return JSONResponse({"configured": True, "items": [dataclasses.asdict(t) for t in items],
+                             "has_more": has_more}, headers=_NO_STORE)
+
     @app.get("/api/origins")
     async def api_origins():
         """Production regions for the catalog's region filter (美劇 / 韓劇 / 陸劇 ...)."""

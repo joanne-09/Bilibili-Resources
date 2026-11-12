@@ -330,3 +330,60 @@ async def test_origin_is_sent_as_origin_country_and_combines_with_genre():
 async def test_unknown_origin_is_a_value_error():
     with pytest.raises(ValueError):
         await client(Api()).available("netflix", "tv", origin="XX")
+
+
+# ---- title search inside the catalog ----------------------------------------
+
+class SearchApi(Api):
+    """/search/multi answers per language; other paths come from routes."""
+
+    def __init__(self, by_lang, routes=None, total_pages=1):
+        super().__init__(routes or {})
+        self.by_lang, self.total_pages = by_lang, total_pages
+
+    def __call__(self, request):
+        if request.url.path.endswith("/search/multi"):
+            self.requests.append(request)
+            return httpx.Response(200, json={"page": 1, "total_pages": self.total_pages,
+                                             "results": self.by_lang[request.url.params["language"]]})
+        return super().__call__(request)
+
+
+FRIENDS_TW = {"id": 1668, "media_type": "tv", "name": "六人行", "original_name": "Friends",
+              "first_air_date": "1994-09-22", "poster_path": "/f.jpg"}
+FRIENDS_CN = {**FRIENDS_TW, "name": "老友记"}
+DUNE_TW = {"id": 438631, "media_type": "movie", "title": "沙丘", "original_title": "Dune", "release_date": "2021-09-15"}
+PERSON = {"id": 7, "media_type": "person", "name": "Someone"}
+US = lambda *names: {"results": {"US": {"flatrate": [{"provider_id": i, "provider_name": n} for i, n in enumerate(names, 1)]}}}  # noqa: E731
+
+
+async def test_search_returns_series_and_films_with_both_titles_and_skips_people():
+    api = SearchApi({"zh-TW": [FRIENDS_TW, PERSON, DUNE_TW], "zh-CN": [FRIENDS_CN, PERSON, DUNE_TW]})
+    items, has_more = await client(api).search("friends")
+    assert [(t.kind, t.display_title, t.title, t.original_title, t.year) for t in items] == [
+        ("tv", "六人行", "老友记", "Friends", "1994"), ("movie", "沙丘", "沙丘", "Dune", "2021")]
+    assert has_more is False
+    p = api.last("/search/multi").url.params
+    assert (p["query"], p["page"]) == ("friends", "1")
+
+
+async def test_search_marks_which_of_the_three_platforms_stream_each_title():
+    api = SearchApi({"zh-TW": [FRIENDS_TW, DUNE_TW], "zh-CN": [FRIENDS_CN, DUNE_TW]}, routes={
+        "/tv/1668/watch/providers": US("HBO Max", "Netflix Standard with Ads", "HBO Max Amazon Channel", "Hulu"),
+        "/movie/438631/watch/providers": {"results": {"GB": {"flatrate": [{"provider_id": 8, "provider_name": "Netflix"}]}}}})
+    items, _ = await client(api).search("x")
+    assert items[0].platforms == ["netflix", "hbo"]        # platform order, ad tier counts, reseller channel does not
+    assert items[1].platforms == []                         # only streaming outside the US
+
+
+async def test_search_survives_missing_provider_data():
+    api = SearchApi({"zh-TW": [FRIENDS_TW], "zh-CN": [FRIENDS_CN]})      # provider lookups 404
+    items, _ = await client(api).search("friends")
+    assert [t.display_title for t in items] == ["六人行"] and items[0].platforms == []
+
+
+async def test_search_reports_more_pages_and_rejects_blank_query():
+    api = SearchApi({"zh-TW": [FRIENDS_TW], "zh-CN": [FRIENDS_CN]}, total_pages=3)
+    assert (await client(api).search("friends", page=2))[1] is True
+    with pytest.raises(ValueError):
+        await client(api).search("   ")

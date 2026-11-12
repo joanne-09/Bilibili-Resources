@@ -6,7 +6,7 @@ network and next air date, but not when a licensed title will join a catalog.
 """
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
 import httpx
@@ -112,6 +112,7 @@ class Title:
     poster: str
     season: int | None = None
     display_title: str = ""  # Traditional-Chinese title for the screen
+    platforms: list[str] = field(default_factory=list)  # search results: which of PLATFORMS stream it (US)
 
 
 @dataclass
@@ -203,20 +204,18 @@ class TmdbClient:
         start = self._today()
         return start.isoformat(), (start + timedelta(days=UPCOMING_DAYS)).isoformat()
 
-    async def _discover(self, kind: str, params: dict) -> tuple[list[Title], int]:
-        """One discover page, fetched twice: Taiwan titles to show, mainland
-        titles to search Bilibili with. -> (titles, total_pages)"""
-        path = f"/discover/{kind}"
-        shown = await self._get(path, {**params, "language": _DISPLAY_LANGUAGE})
-        mainland = await self._get(path, {**params, "language": _LANGUAGE})
-        by_id = {r.get("id"): r for r in mainland.get("results") or []}
-        name_key = "name" if kind == "tv" else "title"
+    @staticmethod
+    def _pair(shown: list[dict], mainland: list[dict], kind_of) -> list[Title]:
+        """Join the same results fetched in two languages: Taiwan titles to show,
+        mainland titles to search Bilibili with. kind_of(raw) -> "tv" | "movie" | None."""
+        by_id = {(kind_of(r), r.get("id")): r for r in mainland}
         titles = []
-        for raw in shown.get("results") or []:
-            if not raw.get("id"):
+        for raw in shown:
+            kind = kind_of(raw)
+            if kind not in KINDS or not raw.get("id"):
                 continue
-            tw_name = raw.get(name_key) or ""
-            cn_raw = by_id.get(raw["id"])
+            tw_name = raw.get("name" if kind == "tv" else "title") or ""
+            cn_raw = by_id.get((kind, raw["id"]))
             title = _title(cn_raw or raw, kind)
             if cn_raw is None:
                 title.title = to_simplified(tw_name)
@@ -228,7 +227,54 @@ class TmdbClient:
             else:
                 title.display_title = tw_name or title.original_title
             titles.append(title)
+        return titles
+
+    async def _discover(self, kind: str, params: dict) -> tuple[list[Title], int]:
+        """One discover page in both languages. -> (titles, total_pages)"""
+        path = f"/discover/{kind}"
+        shown = await self._get(path, {**params, "language": _DISPLAY_LANGUAGE})
+        mainland = await self._get(path, {**params, "language": _LANGUAGE})
+        titles = self._pair(shown.get("results") or [], mainland.get("results") or [], lambda raw: kind)
         return titles, int(shown.get("total_pages") or 0)
+
+    async def _streaming_on(self, kind: str, tmdb_id: int) -> list[str]:
+        """Which of PLATFORMS include this title in a US subscription. [] when unknown."""
+        try:
+            body = await self._get(f"/{kind}/{tmdb_id}/watch/providers")
+        except TmdbNotConfigured:
+            raise
+        except TmdbError:
+            return []
+        offers = ((body.get("results") or {}).get(_REGION) or {}).get("flatrate") or []
+        names = [str(o.get("provider_name") or "") for o in offers]
+        found = []
+        for key, spec in PLATFORMS.items():
+            for name in names:
+                # "Netflix Standard with Ads" is still Netflix; "HBO Max Amazon Channel"
+                # is a resale through another service, not the platform itself.
+                if "Channel" in name:
+                    continue
+                if any(name == base or name.startswith(base + " ") for base in spec.provider_names):
+                    found.append(key)
+                    break
+        return found
+
+    async def search(self, query: str, page: int = 1) -> tuple[list[Title], bool]:
+        """Series and films matching a name, each marked with the platforms that
+        stream it. Not limited to the three platforms. -> (items, has_more)"""
+        query = " ".join(query.split())
+        if not query:
+            raise ValueError("empty query")
+        if not self.configured:
+            raise TmdbNotConfigured("尚未設定 TMDB 金鑰")
+        params = {"query": query, "page": page, "include_adult": "false"}
+        shown = await self._get("/search/multi", {**params, "language": _DISPLAY_LANGUAGE})
+        mainland = await self._get("/search/multi", {**params, "language": _LANGUAGE})
+        titles = self._pair(shown.get("results") or [], mainland.get("results") or [],
+                            lambda raw: raw.get("media_type"))
+        for title in titles:
+            title.platforms = await self._streaming_on(title.kind, title.tmdb_id)
+        return titles, page < int(shown.get("total_pages") or 0)
 
     async def genres(self, kind: str) -> list[Genre]:
         if kind not in KINDS:

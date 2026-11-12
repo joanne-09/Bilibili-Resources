@@ -211,7 +211,7 @@ def test_catalog_available_and_upcoming(fake):
         u = tc.get("/api/catalog", params={"platform": "hbo", "section": "upcoming", "kind": "tv"}).json()
     assert a["configured"] is True and a["has_more"] is True
     assert a["items"][0] == {"tmdb_id": 1396, "kind": "tv", "title": "绝命毒师", "original_title": "Breaking Bad",
-                             "year": "2008", "date": "2008-01-20", "poster": "https://img/p.jpg", "season": None, "display_title": ""}
+                             "year": "2008", "date": "2008-01-20", "poster": "https://img/p.jpg", "season": None, "display_title": "", "platforms": []}
     assert (u["items"][0]["date"], u["items"][0]["season"], u["has_more"]) == ("2026-11-15", 4, False)
 
 
@@ -412,3 +412,33 @@ def test_catalog_passes_origin_alongside_genre(fake):
     assert ("available", "netflix", "tv", 1, 18, "KR") in tmdb.calls
     assert ("upcoming", "netflix", "tv", None, "CN") in tmdb.calls
     assert bad.status_code == 400 and bad.json() == {"error": "參數錯誤"}
+
+
+# ---- catalog title search ----------------------------------------------------
+
+class SearchTmdb(FakeTmdb):
+    async def search(self, query, page=1):
+        self.calls.append(("search", query, page))
+        if self.error:
+            raise self.error
+        return [Title(1668, "tv", "老友记", "Friends", "1994", "1994-09-22", "", display_title="六人行",
+                      platforms=["hbo"])], True
+
+
+def test_catalog_search_endpoint(fake):
+    tmdb = SearchTmdb()
+    with serve2(fake, tmdb) as tc:
+        body = tc.get("/api/catalog/search", params={"q": "  friends ", "page": 2}).json()
+        blank = tc.get("/api/catalog/search", params={"q": "  "})
+    assert ("search", "friends", 2) in tmdb.calls
+    assert body["configured"] is True and body["has_more"] is True
+    assert (body["items"][0]["display_title"], body["items"][0]["platforms"]) == ("六人行", ["hbo"])
+    assert blank.status_code == 400 and blank.json() == {"error": "請輸入片名"}
+
+
+def test_catalog_search_not_configured_and_error(fake):
+    with serve2(fake, SearchTmdb(configured=False)) as tc:
+        assert tc.get("/api/catalog/search", params={"q": "x"}).json() == {"configured": False, "items": [], "has_more": False}
+    with serve2(fake, SearchTmdb(error=TmdbError("無法取得片單資料（TMDB）"))) as tc:
+        resp = tc.get("/api/catalog/search", params={"q": "x"})
+    assert resp.status_code == 502 and resp.json() == {"error": "無法取得片單資料（TMDB）"}
